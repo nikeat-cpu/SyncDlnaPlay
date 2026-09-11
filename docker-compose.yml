@@ -1,0 +1,55 @@
+# DLNA 音响控制系统 - iStoreOS 部署配置
+#
+# ★★★ 重点：必须使用 host 网络模式 ★★★
+# DLNA 设备发现依赖 SSDP 组播（239.255.255.250:1900），
+# 默认的 bridge 网络会把组播隔离，导致发现不到任何音响。
+#
+# 部署：docker compose up -d --build
+# 访问：http://192.168.1.10:5000
+# 音乐目录：网页「音乐目录」里可动态添加本地路径 / SMB 共享（不再写死）
+
+services:
+  dlna-speaker:
+    build: .
+    image: dlna-speaker:latest
+    container_name: dlna-speaker
+
+    # 关键：共享宿主网络栈
+    network_mode: host
+
+    # 音乐目录源（SMB）需要：进入宿主挂载命名空间执行 mount.cifs
+    #   pid: host + SYS_ADMIN  -> 允许 nsenter -t 1 -m 在宿主上挂载
+    pid: host
+    cap_add:
+      - SYS_ADMIN
+      - SYS_PTRACE
+
+    environment:
+      # SSDP 组播使用的网段前缀（根据你的局域网修改）
+      - PREFER_NET=192.168.1.
+      # Web 服务监听端口
+      - HTTP_PORT=5000
+      # 本机对外 IP（音响用这个地址回拉音频），填 iStoreOS 的局域网 IP
+      - HOST_IP=192.168.1.10
+      # 本地音乐目录（可选，见下方 volumes 说明）
+      # - MUSIC_DIR=/music
+      - TZ=Asia/Shanghai
+      - POLL_INTERVAL=1.5
+      - SCAN_INTERVAL=300
+      - LOG_LEVEL=INFO
+      # 状态持久化：targets / delay_ms 保存路径
+      - STATE_FILE=/data/state.json
+
+    # 注意：不要挂载 /etc/localtime —— OpenWrt 上它是符号链接，
+    # Docker 会尝试 mkdir 导致容器启动失败。时区改用 TZ 环境变量解决。
+    volumes:
+      # 状态持久化（targets / delay_ms），挂载到 iStoreOS 大容量分区
+      - /mnt/mmc1-4/dlna-speaker-state:/data
+      # 关键：以 rslave 方式映射宿主 /mnt 到容器 /hostmnt
+      #   宿主上新增的挂载（如网页里添加的 SMB 共享）会立即透传进容器，
+      #   无需重建容器。容器内路径 = /hostmnt/<宿主 /mnt 下的相对路径>
+      - /mnt:/hostmnt:rslave
+      # 兼容旧用法：宿主已挂好的目录也可以直接映射
+      - /etc/TZ:/etc/TZ:ro
+
+    restart: unless-stopped

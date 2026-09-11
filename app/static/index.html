@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="NwFbsWmyvcIi47n5UJB7QF">
+<head data-page-node-id="zgWcHN36a1csAzx4HgNRYc">
+<meta charset="UTF-8" data-page-node-id="qfQHK9ltEiKq0WQEBAa9k1">
+<meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="Pk44h8tTJTQXe2rhclYcKl">
+<title>DLNA 音响播放器</title>
+<style>
+  :root{
+    --bg:#0f1115; --card:#171a21; --card2:#1d212a; --line:#282d38;
+    --tx:#e6e8eb; --tx2:#8b92a0; --tx3:#5b6270;
+    --pri:#4a9eff; --pri2:#2d7fd6; --ok:#4ade80; --warn:#fbbf24; --err:#f87171;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg);color:var(--tx);
+    font-family:"PingFang SC","Microsoft YaHei","Hiragino Sans GB",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    font-size:14px;line-height:1.6;padding-bottom:120px;
+  }
+  .wrap{max-width:1180px;margin:0 auto;padding:20px}
+
+  header{display:flex;align-items:center;justify-content:space-between;
+    padding:16px 0 20px;border-bottom:1px solid var(--line);margin-bottom:20px}
+  h1{font-size:19px;font-weight:600;display:flex;align-items:center;gap:9px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok)}
+  .dot.off{background:var(--tx3);box-shadow:none}
+  .btn{background:var(--card2);color:var(--tx);border:1px solid var(--line);
+    padding:7px 14px;border-radius:7px;cursor:pointer;font-size:13px;transition:.15s;font-family:inherit}
+  .btn:hover{background:#252a35;border-color:#3a4150}
+  .btn:active{transform:translateY(1px)}
+  .btn.pri{background:var(--pri);border-color:var(--pri);color:#fff}
+  .btn.pri:hover{background:var(--pri2)}
+  .btn.sm{padding:5px 10px;font-size:12px}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn.on{background:var(--pri);border-color:var(--pri);color:#fff}
+
+  h2{font-size:14px;font-weight:600;color:var(--tx2);margin:22px 0 11px;display:flex;align-items:center;gap:8px}
+  h2::before{content:"";width:3px;height:13px;background:var(--pri);border-radius:2px}
+
+  .dev-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(258px,1fr));gap:12px}
+  .dev{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    padding:14px;cursor:pointer;transition:.15s;position:relative}
+  .dev:hover{border-color:#3a4150}
+  .dev.on{border-color:var(--pri);background:#16233a}
+  .dev.off{opacity:.5}
+  .dev-top{display:flex;align-items:flex-start;gap:10px}
+  .dev-ico{width:34px;height:34px;border-radius:8px;background:var(--card2);
+    display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
+  .dev.on .dev-ico{background:var(--pri);color:#fff}
+  .dev-name{font-weight:600;font-size:14px}
+  .dev-ip{font-size:11.5px;color:var(--tx3);font-family:ui-monospace,Consolas,monospace}
+  .dev-state{position:absolute;top:14px;right:14px;font-size:11px;padding:2px 8px;
+    border-radius:20px;background:var(--card2);color:var(--tx2)}
+  .dev-state.playing{background:rgba(74,222,128,.14);color:var(--ok)}
+  .dev-state.paused{background:rgba(251,191,36,.14);color:var(--warn)}
+  .dev-track{font-size:12px;color:var(--tx2);margin-top:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .dev-meta{font-size:11px;color:var(--tx3);margin-top:2px}
+
+  .dev-delay{display:flex;align-items:center;gap:5px;margin-top:8px;font-size:12px;color:var(--tx2)}
+  .dev-delay-lbl{color:var(--tx3);font-size:11px;user-select:none}
+  .dev-delay-input{width:54px;background:var(--card2);border:1px solid var(--line);color:var(--tx);border-radius:5px;padding:3px 5px;font-size:12px;font-family:ui-monospace,Consolas,monospace;text-align:center;-moz-appearance:textfield}
+  .dev-delay-input::-webkit-outer-spin-button,.dev-delay-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+  .dev-delay-input:focus{border-color:var(--pri);outline:none}
+  .dev-delay-btn{width:22px;height:22px;border:1px solid var(--line);background:var(--card2);color:var(--tx);border-radius:5px;cursor:pointer;font-size:13px;line-height:1;display:inline-flex;align-items:center;justify-content:center;padding:0}
+  .dev-delay-btn:hover{background:#2a3040;border-color:#3a4150}
+  .dev-delay-unit{font-size:10px;color:var(--tx3);user-select:none}
+
+  .bar{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+  input[type=text]{background:var(--card);border:1px solid var(--line);color:var(--tx);
+    padding:7px 12px;border-radius:7px;font-size:13px;font-family:inherit;outline:none;flex:1;min-width:170px}
+  input[type=text]:focus{border-color:var(--pri)}
+  .seg{display:flex;background:var(--card);border:1px solid var(--line);border-radius:7px;overflow:hidden}
+  .seg button{background:none;border:none;color:var(--tx2);padding:7px 15px;cursor:pointer;font-size:13px;font-family:inherit;transition:.15s}
+  .seg button.on{background:var(--pri);color:#fff}
+  .seg button:not(.on):hover{background:var(--card2);color:var(--tx)}
+
+  .crumb{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:12.5px;color:var(--tx2);
+    margin-bottom:10px;min-height:22px}
+  .crumb span{cursor:pointer;padding:3px 9px;background:var(--card);border:1px solid var(--line);border-radius:6px;transition:.15s}
+  .crumb span:hover{border-color:var(--pri);color:var(--tx)}
+  .crumb i{color:var(--tx3);font-style:normal}
+  .list-head{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+  .list-head .spacer{flex:1}
+
+  .list{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;max-height:440px;overflow-y:auto}
+  .row{display:flex;align-items:center;gap:11px;padding:9px 14px;border-bottom:1px solid var(--line);cursor:pointer;transition:.12s}
+  .row:last-child{border-bottom:none}
+  .row:hover{background:var(--card2)}
+  .row.playing{background:#16233a}
+  .row-ico{width:26px;text-align:center;font-size:15px;flex-shrink:0}
+  .row-main{flex:1;min-width:0}
+  .row-title{font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row-sub{font-size:11.5px;color:var(--tx3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row-dur{font-size:12px;color:var(--tx3);font-family:ui-monospace,Consolas,monospace;flex-shrink:0}
+  .row.playing .row-title{color:var(--ok)}
+  .row-act{display:flex;gap:6px;flex-shrink:0}
+  .icon-btn{width:30px;height:30px;border-radius:7px;border:1px solid var(--line);background:var(--card2);
+    color:var(--tx2);cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;transition:.15s}
+  .icon-btn:hover{background:#2a3040;border-color:#3a4150;color:var(--tx)}
+  .icon-btn.pri{background:var(--pri);border-color:var(--pri);color:#fff}
+  .empty{padding:34px;text-align:center;color:var(--tx3);font-size:13px}
+
+  /* 队列 */
+  .q-item{display:flex;align-items:center;gap:10px;padding:7px 13px;border-bottom:1px solid var(--line);font-size:13px;cursor:pointer}
+  .q-item:hover{background:var(--card2)}
+  .q-item.cur{background:#16233a;color:var(--ok)}
+  .q-idx{color:var(--tx3);font-size:11.5px;width:26px;flex-shrink:0;font-family:ui-monospace,Consolas,monospace}
+  .q-title{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .q-dur{color:var(--tx3);font-size:11.5px;font-family:ui-monospace,Consolas,monospace}
+
+  /* 底部播放条 */
+  .player{position:fixed;bottom:0;left:0;right:0;background:rgba(23,26,33,.97);backdrop-filter:blur(12px);
+    border-top:1px solid var(--line);padding:12px 0;z-index:50}
+  .player-in{max-width:1180px;margin:0 auto;padding:0 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  .ctrl{display:flex;gap:8px;align-items:center}
+  .ctrl button{width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:var(--card2);
+    color:var(--tx);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;transition:.15s}
+  .ctrl button:hover{background:#2a3040;border-color:#3a4150}
+  .ctrl button.main{width:44px;height:44px;background:var(--pri);border-color:var(--pri);color:#fff;font-size:17px}
+  .ctrl button.main:hover{background:var(--pri2)}
+  .ctrl button.mode{font-size:15px;color:var(--tx3)}
+  .ctrl button.mode.on{color:var(--pri);border-color:var(--pri)}
+  .np{flex:1;min-width:180px}
+  .np-title{font-size:13.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .np-sub{font-size:11.5px;color:var(--tx3)}
+  .prog{display:flex;align-items:center;gap:9px;flex:1;min-width:200px}
+  .prog input[type=range]{flex:1;accent-color:var(--pri);height:4px;cursor:pointer}
+  .prog-t{font-size:11.5px;color:var(--tx3);font-family:ui-monospace,Consolas,monospace;min-width:88px;text-align:center}
+  .vol{display:flex;align-items:center;gap:8px;min-width:128px}
+  .vol input[type=range]{width:84px;accent-color:var(--pri);cursor:pointer}
+  .vol-v{font-size:12px;color:var(--tx2);width:30px;font-family:ui-monospace,Consolas,monospace}
+
+  .toast{position:fixed;top:18px;right:18px;background:var(--card2);border:1px solid var(--line);border-left:3px solid var(--pri);
+    padding:11px 17px;border-radius:7px;font-size:13px;z-index:200;opacity:0;transform:translateX(20px);transition:.25s;pointer-events:none;max-width:330px}
+  .toast.show{opacity:1;transform:translateX(0)}
+  .toast.err{border-left-color:var(--err)}
+  .toast.ok{border-left-color:var(--ok)}
+  ::-webkit-scrollbar{width:9px;height:9px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:#2f3542;border-radius:5px}
+  ::-webkit-scrollbar-thumb:hover{background:#3d4453}
+  .grid2{display:grid;grid-template-columns:1fr;gap:0}
+  @media(min-width:880px){.grid2{grid-template-columns:1.4fr 1fr;gap:22px;align-items:start}}
+</style>
+</head>
+<body data-page-node-id="tJK7c1MkqhuRwvY3ibKQgw">
+<div class="wrap" data-page-node-id="ocUBJEAIaKJbthctHo4Wgl">
+  <header data-page-node-id="ay3aWIsAkOFeUFvrDH24MC">
+    <h1 data-page-node-id="4YM731gFasIzgxpX5mvreC"><span class="dot off" id="hd-dot" data-page-node-id="4gT0Uj7FoEsP6rXorBN1qP"></span>DLNA 音响播放器</h1>
+    <div style="display:flex;gap:8px" data-page-node-id="OrpEVIhnRGLr1wRZxW9BdB">
+      <button class="btn sm" onclick="doScan()" data-page-node-id="BymTfktX6M25MsJIKRYrtS">重新扫描设备</button>
+      <button class="btn sm" onclick="doResync()" data-page-node-id="KEMd1SUFM2HBL2LwXM46ZB">重新同步</button>
+    </div>
+  </header>
+
+  <h2 data-page-node-id="CZs9T4A3ZLAwZhN5Mh8qp0">音响设备 <span style="color:var(--tx3);font-weight:400;font-size:12px" data-page-node-id="oEns9vjEipGNW9LUHKD9JS">（点击选中要播放的音响）</span></h2>
+  <div class="dev-grid" id="devices" data-page-node-id="K3fUln7kZyYnK8fD3jlHQ5"><div class="empty" data-page-node-id="6JCJcfTXAbVCkJmILPGnol">扫描中…</div></div>
+
+  <div class="grid2" data-page-node-id="Q5rhwckABt2LP0XicXwFTb">
+    <div data-page-node-id="szPvajhS3twBN1xjhyJVvc">
+      <h2 data-page-node-id="ENyXP1Za1IrVIf5hwR2rKB">音乐库</h2>
+      <div class="bar" data-page-node-id="gZV4uVcxH4jhq38GKMu5JC">
+        <div class="seg" id="srcSeg" data-page-node-id="W6T4GpkjBPSAw5ELWj859g">
+          <button class="on" data-src="dlna" onclick="setSource('dlna')" data-page-node-id="dSVkXG5bkB8azF7z8LZbci">DLNA 媒体服务器</button>
+          <button data-src="local" onclick="setSource('local')" data-page-node-id="N2GmUTkXEEGcpL10m05OIF">本地共享目录</button>
+        </div>
+        <input type="text" id="search" placeholder="搜索歌名 / 艺术家…" onkeydown="if(event.key==='Enter')doSearch()" data-page-node-id="A16KSdaocdJ1v2V4Jtq8qU">
+        <button class="btn" onclick="doSearch()" data-page-node-id="H9YIGuLcBa5KVz30Hx9X92">搜索</button>
+        <button class="btn" onclick="browseRoot()" data-page-node-id="XFgteEbnwgrTv157cdEIYr">根目录</button>
+        <button class="btn" onclick="rescanMusic()" title="重新扫描当前音乐目录">重扫</button>
+      </div>
+      <div class="crumb" id="crumb" data-page-node-id="c7ul2JidzQbyR0VoJXZPU7"></div>
+      <div class="list-head" data-page-node-id="rKUCzEiniFOzjsGrdOdDJu">
+        <button class="btn pri sm" id="playAllBtn" onclick="playAllCurrent()" data-page-node-id="NzoJ5loFeo0UsQg5gWWewh">▶ 播放本目录全部</button>
+        <span class="spacer" data-page-node-id="wGMh8qtnA0txQSNeZ67toX"></span>
+        <span id="dirCount" style="color:var(--tx3);font-size:12px" data-page-node-id="oAznCHYcWIOvB95449k9j7"></span>
+      </div>
+      <div class="list" id="list" data-page-node-id="vHAmBUpHZXMwPAsQsilBX0"><div class="empty" data-page-node-id="RnxjAzhuMOno7fAA9qXmH8">加载中…</div></div>
+    </div>
+
+    <div data-page-node-id="1RKl7WyFTkgjbfjrMZRUkZ">
+      <h2 data-page-node-id="WuDD5u9yEW1TQsEHn9Iyc6">播放列表 <span id="qcount" style="color:var(--tx3);font-weight:400;font-size:12px" data-page-node-id="1vL1K5dUHJuF6P90zdZmoV"></span></h2>
+      <div class="bar" style="margin-bottom:8px" data-page-node-id="DHSRIEMaXuB1apzZPiF7nl">
+        <button class="btn sm" id="repeatBtn" onclick="cycleRepeat()" title="循环模式" data-page-node-id="VjEySkik4893tMATaCCIll">🔁 循环：关</button>
+        <button class="btn sm" id="shuffleBtn" onclick="toggleShuffle()" title="随机播放" data-page-node-id="wTuoy0nqpt7riksW3lGkMZ">🔀 随机：关</button>
+        <span class="spacer" data-page-node-id="VGBXpob9OYFdBvLiK7brhX"></span>
+        <button class="btn sm" onclick="clearQueue()" data-page-node-id="UxVQcNnVYlZeA1c2zBkdAb">清空</button>
+      </div>
+      <div class="list" id="queue" style="max-height:440px" data-page-node-id="xDhTPYGjeQ3lGXLbkNWHe8"><div class="empty" data-page-node-id="wUHeooofaWmxnoJOAqXATH">暂无播放列表<br data-page-node-id="lC5oRWBzWPBE3IK8p75pOh"><span style="font-size:12px" data-page-node-id="5OrWTTwD69s79HNBH4Gj5E">点击歌曲或「播放本目录全部」开始</span></div></div>
+    </div>
+  </div>
+
+  <h2 style="margin-top:6px" data-page-node-id="CGZMIfghxxAIlwGb0z2K5d">在线音乐 <span style="color:var(--tx3);font-weight:400;font-size:12px" data-page-node-id="hqsCssY1Vi147VBK4ohlct">（MusicFree 插件 · 点 ▶ 立即播放并后台下载，＋加入播放列表）</span></h2>
+  <div class="bar" data-page-node-id="iCAwHDtChBNLkzTJVYD199">
+    <select id="onlineProvider" style="min-width:140px" data-page-node-id="M4tYCFnBNN8OVbgrHlCIzD"><option value="" data-page-node-id="68RdIIayZOPv2Hnk95J2bb">加载音源中…</option></select>
+    <input type="text" id="onlineSearch" placeholder="搜索在线歌曲 / 艺术家…" onkeydown="if(event.key==='Enter')doOnlineSearch()" data-page-node-id="qBsd9IFLiMJmCQULX3ppLW">
+    <button class="btn" onclick="doOnlineSearch()" data-page-node-id="on8EsYOw6TQ73Gt2Fp6tAr">搜索</button>
+    <select id="onlineLimit" style="min-width:86px" onchange="onLimitChange()" title="每次搜索显示条数">
+      <option value="20">20 首</option>
+      <option value="30" selected>30 首</option>
+      <option value="50">50 首</option>
+      <option value="100">100 首</option>
+      <option value="custom">自定义…</option>
+    </select>
+    <input type="number" id="onlineLimitCustom" min="1" max="200" placeholder="条数" style="display:none;width:76px" onkeydown="if(event.key==='Enter')doOnlineSearch()">
+    <button class="btn" id="btnOnlineAddAll" style="display:none" onclick="addOnlineAll()" data-page-node-id="ebLPiyGuQ1Ow69lXkMHwje">全部加入</button>
+    <button class="btn" id="btnOnlineDlAll" style="display:none" onclick="downloadOnlineAll()" data-page-node-id="hrLeKPu7T5y0vOsa0oznIe">全部下载</button>
+  </div>
+  <div class="list" id="onlineList" data-page-node-id="zZGX9hI2Ju40255M8jXws3"><div class="empty" data-page-node-id="9U3vXmBR5e4Avo9Ykx8BGT">请选择音源并输入关键字搜索<br data-page-node-id="FHz7t34oBdaXKZca5Q2MO3"><span style="font-size:12px" data-page-node-id="SpTTdqDG4YbeQ75TY1aeNU">音源由 musicfree-bridge 提供</span></div></div>
+  <div id="onlinePager" style="display:none;justify-content:center;align-items:center;gap:12px;padding:8px 4px 2px">
+    <button class="btn" id="btnOnlinePrev" onclick="onlinePage(-1)">‹ 上一页</button>
+    <span id="onlinePageNo" style="font-size:13px;color:var(--tx3)">第 1 页</span>
+    <button class="btn" id="btnOnlineNext" onclick="onlinePage(1)">下一页 ›</button>
+  </div>
+  <h2 style="margin-top:16px;cursor:pointer" onclick="toggleMusicSources()">音乐目录
+    <span style="color:var(--tx3);font-weight:400;font-size:12px">（可添加本地路径 / SMB 共享；下载与「本地音乐」都使用当前目录）</span>
+    <span id="msArrow" style="color:var(--tx3);font-size:12px">▾</span></h2>
+  <div id="msBox" style="display:none">
+    <div class="bar" style="margin-bottom:8px;gap:8px;flex-wrap:wrap">
+      <span id="msActive" style="font-size:12.5px;color:var(--tx2)">加载中…</span>
+      <span class="spacer"></span>
+      <button class="btn sm" onclick="loadMusicSources()">刷新</button>
+      <button class="btn sm pri" onclick="toggleMsAdd()">＋ 添加目录</button>
+    </div>
+    <div class="list" id="msList"><div class="empty">加载中…</div></div>
+
+    <div id="msAdd" style="display:none;border:1px dashed var(--line);border-radius:8px;padding:10px;margin-top:10px">
+      <div class="bar" style="gap:8px;flex-wrap:wrap">
+        <input type="text" id="msName" placeholder="名称，如 NAS 音乐" style="width:160px">
+        <select id="msType" onchange="onMsTypeChange()">
+          <option value="path">本机文件夹 / 已挂载目录</option>
+          <option value="smb">SMB / CIFS 网络共享</option>
+        </select>
+      </div>
+
+      <div id="msPathRow" class="bar" style="gap:8px;flex-wrap:wrap;margin-top:8px">
+        <input type="text" id="msPath" placeholder="点右侧「浏览」，从设备存储里选一个文件夹" style="flex:1;min-width:220px" readonly>
+        <button class="btn sm" onclick="msBrowse()">浏览…</button>
+      </div>
+      <div id="msBrowser" style="display:none;max-height:230px;overflow:auto;border:1px solid var(--line);border-radius:6px;margin-top:8px;padding:6px 8px"></div>
+
+      <div id="msSmbRow" style="display:none">
+        <div class="bar" style="gap:8px;flex-wrap:wrap;margin-top:8px">
+          <input type="text" id="msHost" placeholder="主机 / IP，如 192.168.1.100" style="width:200px">
+          <input type="text" id="msShare" placeholder="共享名，如 music" style="width:150px">
+          <input type="text" id="msSub" placeholder="子目录（可选）" style="width:140px">
+        </div>
+        <div class="bar" style="gap:8px;flex-wrap:wrap;margin-top:8px">
+          <input type="text" id="msUser" placeholder="用户名（可留空）" style="width:170px">
+          <input type="password" id="msPass" placeholder="密码" style="width:150px">
+          <label style="font-size:12px;color:var(--tx3)"><input type="checkbox" id="msGuest"> 匿名 / 免密</label>
+        </div>
+      </div>
+
+      <div class="bar" style="gap:8px;margin-top:10px;flex-wrap:wrap">
+        <button class="btn" id="msTestBtn" onclick="testMusicSource()">测试连接</button>
+        <button class="btn pri" onclick="addMusicSource()">添加</button>
+        <button class="btn" onclick="toggleMsAdd(false)">取消</button>
+        <span id="msMsg" style="font-size:12px;color:var(--tx3)"></span>
+      </div>
+    </div>
+  </div>
+
+  <div id="dlStatus" style="display:none;font-size:12px;color:var(--tx3);padding:4px 6px;line-height:1.7;white-space:pre-wrap;max-height:120px;overflow:auto" data-page-node-id="t5TavhKCOanvHRGmplwKoL"></div>
+</div>
+
+<div class="player" data-page-node-id="KHAbfGHyT9AHhxYBSH4VP7">
+  <div class="player-in" data-page-node-id="L5VpH6zKjcWYpAXkOOaqR9">
+    <div class="ctrl" data-page-node-id="WgNkrEoYmVLHbfGSxkHZyl">
+      <button onclick="ctl('prev')" title="上一曲" data-page-node-id="gsbCzS6ZRwyar23yKCf7vu">⏮</button>
+      <button class="main" id="playPauseBtn" onclick="togglePlay()" title="播放/暂停" data-page-node-id="A6uFeNDaox8YTZTDX7kUss">▶</button>
+      <button onclick="ctl('stop')" title="停止" data-page-node-id="eCBpHAq7mZhLtIIVGmFfZK">⏹</button>
+      <button onclick="ctl('next')" title="下一曲" data-page-node-id="tV8MIYWst4fFbXBXFV8jxk">⏭</button>
+    </div>
+    <div class="ctrl" style="gap:6px" data-page-node-id="lnKcJZtLXwkKVExlf4nsLs">
+      <button class="mode" id="barRepeat" onclick="cycleRepeat()" title="循环" data-page-node-id="cf89JMXlXeHVAm2WxnPYtU">🔁</button>
+      <button class="mode" id="barShuffle" onclick="toggleShuffle()" title="随机" data-page-node-id="lCdi4FGEronZ4fVqYSFyKP">🔀</button>
+    </div>
+    <div class="np" data-page-node-id="zrPHzsV6QWHVc7BV8MjN2R">
+      <div class="np-title" id="npTitle" data-page-node-id="DQmEUkF2SvWEtGolMNMldM">未在播放</div>
+      <div class="np-sub" id="npSub" data-page-node-id="g5KtcqhHFQGueJdYncaEsX">请先在上方勾选音响</div>
+    </div>
+    <div class="prog" data-page-node-id="Gn74E6gNarHIWdzElotkrI">
+      <input type="range" id="seek" min="0" max="1000" value="0" onchange="doSeek(this.value)" data-page-node-id="bjjkNrslHNarl7WWrp2Ekh">
+      <div class="prog-t" id="progT" data-page-node-id="jbkvXU3FO81ux0ETQQwjAo">--:-- / --:--</div>
+    </div>
+    <div class="vol" data-page-node-id="VlCO4YWMD1sO9xHT7aw9NN">
+      <span style="font-size:14px" data-page-node-id="h8XguFuX3pmzQGsMYwD6M1">🔊</span>
+      <input type="range" id="vol" min="0" max="100" value="50" onchange="setVol(this.value)" data-page-node-id="HQzpuGr6vaH0SJI2W2PLOH">
+      <span class="vol-v" id="volV" data-page-node-id="hZLzLzd6om8NgyNdgkTb76">50</span>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" data-page-node-id="e82gUBtbM6hQaxqGGKBm8B"></div>
+
+<script>
+let state={devices:[],servers:[],player:{queue:[],index:-1,order:[],playpos:0,targets:[],playing:false,current:null,repeat:'off',shuffle:false}};
+let source='dlna';
+let crumbs=[{id:'0',name:'根目录'}];
+let curList=[];          // 当前视图中的曲目（点击即以此建队列）
+let curContainer='0';    // 当前容器 ID（用于"播放本目录全部"）
+let seeking=false;
+
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const sec=t=>{if(!t)return 0;const p=String(t).split(':').map(Number);
+  return p.length===3?p[0]*3600+p[1]*60+p[2]:p.length===2?p[0]*60+p[1]:(p[0]||0)};
+const fmt=s=>{s=Math.max(0,Math.floor(s||0));const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;
+  return h>0?`${h}:${String(m).padStart(2,'0')}:${String(x).padStart(2,'0')}`:`${m}:${String(x).padStart(2,'0')}`};
+
+function toast(msg,type=''){const t=$('toast');t.textContent=msg;t.className='toast show '+type;
+  clearTimeout(t._h);t._h=setTimeout(()=>t.className='toast '+type,2600)}
+
+async function api(url,opt){try{const r=await fetch(url,opt);return await r.json()}
+  catch(e){toast('网络错误: '+e.message,'err');return{ok:false}}}
+
+/* ---------- 设备 ---------- */
+function renderDevices(){
+  const ds=state.devices||[];
+  $('hd-dot').className='dot'+(ds.some(d=>d.online)?'':' off');
+  if(!ds.length){$('devices').innerHTML='<div class="empty">未发现音响，点击右上角重新扫描</div>';return}
+  $('devices').innerHTML=ds.map(d=>{
+    const sel=(state.player.targets||[]).includes(d.udn);
+    const st=(d.state||'').toLowerCase();
+    const badge=d.online?(st==='playing'?'播放中':st==='paused_playback'?'已暂停':'待机'):'离线';
+    const cls=d.online?(st==='playing'?'playing':st==='paused_playback'?'paused':''):'';
+    const track=d.online&&d.title?d.title:(d.online&&d.uri?'正在播放':'');
+    const delay=d.delay_ms||0;
+    return `<div class="dev ${sel?'on':''} ${d.online?'':'off'}" onclick="toggleDev('${esc(d.udn)}')">
+      <div class="dev-state ${cls}">${badge}</div>
+      <div class="dev-top">
+        <div class="dev-ico">🔊</div>
+        <div style="min-width:0">
+          <div class="dev-name">${esc(d.name)}</div>
+          <div class="dev-ip">${esc(d.ip)}</div>
+        </div>
+      </div>
+      <div class="dev-track">${track?esc(track):'—'}</div>
+      <div class="dev-delay" onclick="event.stopPropagation()">
+        <span class="dev-delay-lbl">延时</span>
+        <button class="dev-delay-btn" onclick="adjustDelay('${esc(d.udn)}',-50)">−</button>
+        <input class="dev-delay-input" type="number" step="50" min="0" max="5000"
+          value="${delay}" data-udn="${esc(d.udn)}"
+          onchange="setDelay('${esc(d.udn)}',this.value)"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur()}">
+        <span class="dev-delay-unit">ms</span>
+        <button class="dev-delay-btn" onclick="adjustDelay('${esc(d.udn)}',50)">+</button>
+      </div>
+      <div class="dev-meta">${esc(d.manufacturer||'')} ${esc(d.model||'')} · 音量 ${d.volume==null?'?':d.volume}</div>
+    </div>`}).join('');
+}
+
+async function toggleDev(udn){
+  let t=[...(state.player.targets||[])];
+  t.includes(udn)?t=t.filter(x=>x!==udn):t.push(udn);
+  await api('/api/targets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({udns:t})});
+  await loadState();
+}
+
+function findDelayInput(udn){
+  return document.querySelector(`input.dev-delay-input[data-udn="${CSS.escape(udn)}"]`);
+}
+
+async function setDelay(udn, ms){
+  ms=Math.max(0,Math.min(5000,Math.round(parseInt(ms)||0)));
+  const el=findDelayInput(udn);
+  if(el) el.value=ms;
+  const r=await api('/api/delay',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({udn,delay_ms:ms})});
+  if(r.ok){ toast(`延时已设为 ${ms}ms`); }
+  else { toast('延时设置失败','err'); }
+}
+
+function adjustDelay(udn, delta){
+  const el=findDelayInput(udn);
+  if(!el) return;
+  const v=Math.max(0,Math.min(5000,Math.round((parseInt(el.value)||0)+delta)));
+  el.value=v;
+  setDelay(udn,v);
+}
+
+/* ---------- 音乐库 ---------- */
+function setSource(s){
+  source=s;
+  document.querySelectorAll('#srcSeg button').forEach(b=>b.classList.toggle('on',b.dataset.src===s));
+  crumbs=[{id:s==='dlna'?'0':'',name:'根目录'}];
+  curContainer=crumbs[0].id;
+  browse(crumbs[0].id);
+}
+function browseRoot(){crumbs=[{id:source==='dlna'?'0':'',name:'根目录'}];curContainer=crumbs[0].id;browse(crumbs[0].id)}
+
+function renderCrumb(){
+  $('crumb').innerHTML=crumbs.map((c,i)=>
+    (i?'<i>›</i>':'')+`<span onclick="jumpCrumb(${i})">${esc(c.name)}</span>`).join('');
+}
+async function rescanMusic(){
+  const r = await api('/api/music/rescan',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+  toast(r.ok ? '已开始重新扫描' : ('重扫失败：'+(r.msg||'')), r.ok?'ok':'err');
+  if(r.ok) setTimeout(()=>browse(curContainer), 1500);
+}
+
+function jumpCrumb(i){crumbs=crumbs.slice(0,i+1);curContainer=crumbs[i].id;browse(crumbs[i].id)}
+
+async function browse(container){
+  curContainer=container;
+  renderCrumb();
+  $('list').innerHTML='<div class="empty">加载中…</div>';
+  const r=await api(`/api/library?source=${source}&container=${encodeURIComponent(container)}`);
+  if(!r.ok){$('list').innerHTML=`<div class="empty">${esc(r.msg||'加载失败')}</div>`;return}
+  if(r.scanning && !(r.items||[]).length){
+    $('list').innerHTML=`<div class="empty">正在扫描音乐目录…<br><span style="font-size:12px">${esc(r.scanning_dir||'')}</span></div>`;
+    clearTimeout(window._scanTimer);
+    window._scanTimer=setTimeout(()=>browse(curContainer),2500);
+    return;
+  }
+  const items=r.items||[];
+  const folders=(r.folders||[]).filter(f=>f);
+  // 是否处于可"播放全部"的目录（有子目录或非根层级）
+  const canPlayAll = items.length>0 || folders.length>0;
+  $('playAllBtn').style.display = canPlayAll ? '' : 'none';
+  $('dirCount').textContent = (folders.length?`${folders.length} 个文件夹 · `:'')+(items.length?`${items.length} 首`:'');
+
+  let html='';
+  for(const f of folders){
+    html+=`<div class="row" onclick="enter('${esc(f)}')">
+      <div class="row-ico">📁</div>
+      <div class="row-main"><div class="row-title">${esc(f)}</div></div>
+      <div class="row-act">
+        <button class="icon-btn" title="播放此文件夹全部" onclick="event.stopPropagation();playAllHere('${esc(f)}')">▶</button>
+      </div>
+    </div>`;
+  }
+  for(let i=0;i<items.length;i++){
+    const it=items[i];
+    if(it.type==='container'){
+      html+=`<div class="row" onclick="enterC('${esc(it.id)}','${esc(it.title)}')">
+        <div class="row-ico">📁</div>
+        <div class="row-main"><div class="row-title">${esc(it.title)}</div></div>
+        <div class="row-act">
+          <button class="icon-btn" title="播放此专辑全部" onclick="event.stopPropagation();playContainer('${esc(it.id)}')">▶</button>
+        </div>
+      </div>`;
+    }else{
+      const cur=state.player.current;
+      const playing=cur&&cur.url===it.url;
+      html+=`<div class="row ${playing?'playing':''}" onclick="playAt(${i})">
+        <div class="row-ico">${playing?'🎵':'🎵'}</div>
+        <div class="row-main">
+          <div class="row-title">${esc(it.title)}</div>
+          ${it.artist?`<div class="row-sub">${esc(it.artist)}${it.album?' · '+esc(it.album):''}</div>`:''}
+        </div>
+        <div class="row-dur">${it.duration?esc(it.duration):''}</div>
+        <div class="row-act">
+          <button class="icon-btn pri" title="立即播放" onclick="event.stopPropagation();playAt(${i})">▶</button>
+          <button class="icon-btn" title="加入播放列表" onclick="event.stopPropagation();addToQueue(${i})">＋</button>
+        </div>
+      </div>`;
+    }
+  }
+  $('list').innerHTML = html || '<div class="empty">空目录</div>';
+  curList=items;
+}
+
+function enterC(id,title){crumbs.push({id:id,name:title});curContainer=id;browse(id)}
+function enter(folder){
+  const id=crumbs.length?`${crumbs[crumbs.length-1].id}/${folder}`.replace(/^\//,''):folder;
+  crumbs.push({id:id,name:folder});curContainer=id;browse(id);
+}
+
+/* 播放本目录全部（服务端拉取整目录） */
+async function playAllCurrent(){
+  if(!curList.length && !(await hasContent())){toast('当前目录为空','err');return}
+  toast('正在载入整目录…');
+  const r=await api('/api/play-container',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({source:source,container:curContainer,index:0})});
+  if(r.ok)toast(`开始播放整目录（${r.total} 首）`,'ok');else toast('播放失败: '+(r.msg||''),'err');
+  await loadState();
+}
+async function hasContent(){
+  const r=await api(`/api/library?source=${source}&container=${encodeURIComponent(curContainer)}`);
+  return r.ok && ((r.items||[]).length>0 || (r.folders||[]).length>0);
+}
+async function playContainer(id){
+  const r=await api('/api/play-container',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({source:source,container:id,index:0})});
+  if(r.ok)toast(`开始播放专辑（${r.total} 首）`,'ok');else toast('播放失败','err');
+  await loadState();
+}
+async function playAllHere(folder){
+  // 进入该子目录并播放其全部
+  const id=crumbs.length?`${crumbs[crumbs.length-1].id}/${folder}`.replace(/^\//,''):folder;
+  const r=await api('/api/play-container',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({source:source,container:id,index:0})});
+  if(r.ok)toast(`开始播放（${r.total} 首）`,'ok');else toast('播放失败','err');
+  await loadState();
+}
+
+/* 点击某首：把当前视图全部曲目作为队列，从这首歌开始 */
+async function playAt(i){
+  const tracks=curList.filter(x=>x.type!=='container');
+  const target=curList[i];
+  const realIdx=tracks.findIndex(t=>t.url===target.url);
+  if(!(state.player.targets||[]).length){
+    const auto=state.devices.filter(d=>d.online).map(d=>d.udn);
+    if(auto.length){state.player.targets=auto;toast(`已自动选中 ${auto.length} 个音响`)}
+    else{toast('请先勾选要播放的音响','err');return}
+  }
+  const r=await api('/api/play',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({tracks:tracks,index:realIdx<0?0:realIdx})});
+  if(r.ok)toast('开始播放：'+target.title,'ok');else toast('播放失败','err');
+  await loadState();
+}
+/* 加入播放列表（不中断当前播放） */
+async function addToQueue(i){
+  const it=curList[i];
+  if(!it||it.type==='container')return;
+  if(!(state.player.targets||[]).length){
+    const auto=state.devices.filter(d=>d.online).map(d=>d.udn);
+    if(auto.length)state.player.targets=auto;
+  }
+  const r=await api('/api/queue',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({action:'add',tracks:[it]})});
+  if(r.ok)toast('已加入播放列表：'+it.title,'ok');else toast('加入失败','err');
+  await loadState();
+}
+
+async function doSearch(){
+  const q=$('search').value.trim();if(!q)return browseRoot();
+  $('list').innerHTML='<div class="empty">搜索中…</div>';
+  const r=await api(`/api/search?source=${source}&q=${encodeURIComponent(q)}`);
+  if(!r.ok){$('list').innerHTML=`<div class="empty">${esc(r.msg||'搜索失败')}</div>`;return}
+  const items=r.items||[];
+  curList=items;curContainer='';
+  $('playAllBtn').style.display='none';
+  if(!items.length){$('list').innerHTML='<div class="empty">无结果</div>';crumbs=[{id:'',name:`搜索: ${q}`}];renderCrumb();return}
+  $('list').innerHTML=items.map((it,i)=>{
+    const cur=state.player.current;const playing=cur&&cur.url===it.url;
+    return `<div class="row ${playing?'playing':''}" onclick="playAt(${i})">
+      <div class="row-ico">🎵</div>
+      <div class="row-main"><div class="row-title">${esc(it.title)}</div>
+        ${it.artist?`<div class="row-sub">${esc(it.artist)}${it.album?' · '+esc(it.album):''}</div>`:''}</div>
+      <div class="row-dur">${it.duration?esc(it.duration):''}</div>
+      <div class="row-act">
+        <button class="icon-btn pri" title="立即播放" onclick="event.stopPropagation();playAt(${i})">▶</button>
+        <button class="icon-btn" title="加入播放列表" onclick="event.stopPropagation();addToQueue(${i})">＋</button>
+      </div></div>`;
+  }).join('');
+  crumbs=[{id:'',name:`搜索: ${q}`}];renderCrumb();
+}
+
+/* ---------- 播放控制 ---------- */
+function isPlaying(){
+  const t=state.player.targets||[];
+  return (state.devices||[]).some(d=>d.online&&t.includes(d.udn)&&d.state==='PLAYING');
+}
+async function ctl(action){
+  const r=await api('/api/control',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({action:action})});
+  if(r.ok)toast('已' + ({play:'播放',pause:'暂停',stop:'停止',next:'下一曲',prev:'上一曲'}[action]||action),'ok');
+  else toast('操作失败','err');
+  await loadState();
+}
+async function togglePlay(){
+  if(isPlaying())return ctl('pause');
+  // 没在播但队列有内容：恢复/从当前续播
+  if((state.player.queue||[]).length && state.player.index>=0)return ctl('play');
+  toast('播放列表为空，请先选歌','err');
+}
+async function setVol(v){$('volV').textContent=v;
+  await api('/api/volume',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({volume:parseInt(v)})})}
+async function doSeek(frac){
+  const cur=state.player.current;if(!cur)return;
+  const total=cur.duration_sec||0;if(!total)return;
+  const target=Math.floor(total*frac/1000);
+  await api('/api/seek',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({position:target})});
+  toast('跳转到 '+fmt(target),'ok');
+}
+async function doScan(){toast('扫描中…');await api('/api/scan');
+  setTimeout(async()=>{await loadState();toast('扫描完成','ok')},5000)}
+async function doResync(){const r=await api('/api/resync',{method:'POST'});toast(r.ok?'已重新同步':'同步失败',r.ok?'ok':'err')}
+
+/* ---------- 循环 / 随机 ---------- */
+async function cycleRepeat(){
+  const order=['off','all','one'];
+  const cur=order.indexOf(state.player.repeat||'off');
+  const next=order[(cur+1)%order.length];
+  const r=await api('/api/mode',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({repeat:next})});
+  if(r.ok)state.player.repeat=r.repeat;
+  renderMode();await loadState();
+}
+async function toggleShuffle(){
+  const shf=!(state.player.shuffle);
+  const r=await api('/api/mode',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({shuffle:shf})});
+  if(r.ok)state.player.shuffle=r.shuffle;
+  renderMode();await loadState();
+}
+function renderMode(){
+  const rep=state.player.repeat||'off';
+  const shf=state.player.shuffle;
+  const repTxt={off:'🔁 循环：关',all:'🔁 列表循环',one:'🔂 单曲循环'}[rep];
+  $('repeatBtn').textContent=repTxt;
+  $('repeatBtn').classList.toggle('on',rep!=='off');
+  $('barRepeat').classList.toggle('on',rep!=='off');
+  $('shuffleBtn').textContent='🔀 随机：'+(shf?'开':'关');
+  $('shuffleBtn').classList.toggle('on',shf);
+  $('barShuffle').classList.toggle('on',shf);
+}
+
+/* ---------- 播放列表 ---------- */
+function renderQueue(){
+  const q=state.player.queue||[];
+  const curIdx=state.player.index;
+  $('qcount').textContent=q.length?`(${q.length} 首)`:'';
+  if(!q.length){$('queue').innerHTML='<div class="empty">暂无播放列表<br><span style="font-size:12px">点击歌曲或「播放本目录全部」开始</span></div>';return}
+  $('queue').innerHTML=q.map((t,i)=>
+    `<div class="q-item ${i===curIdx?'cur':''}" onclick="jumpTo(${i})">
+      <span class="q-idx">${i+1}</span>
+      <span class="q-title">${esc(t.title)}${t.artist?' <span style="color:var(--tx3);font-size:11px">'+esc(t.artist)+'</span>':''}</span>
+      <span class="q-dur">${t.duration||''}</span>
+      <button class="icon-btn" title="移除" onclick="event.stopPropagation();removeFromQueue(${i})">✕</button>
+    </div>`).join('');
+}
+async function jumpTo(i){
+  await api('/api/jump',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({index:i})});
+  await loadState();
+}
+async function removeFromQueue(i){
+  await api('/api/queue',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({action:'remove',index:i})});
+  await loadState();
+}
+async function clearQueue(){
+  await api('/api/queue',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({action:'clear'})});
+  await loadState();
+}
+
+/* ---------- 状态 ---------- */
+async function loadState(){
+  const r=await api('/api/state');
+  if(!r.ok&&!r.devices)return;
+  state=r;
+  renderDevices();renderQueue();renderNow();renderMode();
+}
+
+function renderNow(){
+  const cur=state.player.current;
+  const targets=(state.player.targets||[]);
+  if(cur){
+    $('npTitle').textContent=cur.title;
+    $('npSub').textContent=`${cur.artist||'未知艺术家'}${targets.length?' · '+targets.length+' 个音响':''}`;
+  }else{
+    const anyPlaying=(state.devices||[]).find(d=>d.online&&d.title);
+    $('npTitle').textContent=anyPlaying?(anyPlaying.title||'播放中'):'未在播放';
+    $('npSub').textContent=targets.length?`已选 ${targets.length} 个音响`:'请先在上方勾选音响';
+  }
+  $('playPauseBtn').textContent=isPlaying()?'⏸':'▶';
+  const on=(state.devices||[]).filter(d=>d.online&&(state.player.targets||[]).includes(d.udn));
+  if(on.length){
+    const pos=Math.max(...on.map(d=>d.position_sec||0));
+    const dur=Math.max(...on.map(d=>d.duration_sec||0));
+    if(dur>0&&!seeking)$('seek').value=Math.min(1000,Math.round(pos/dur*1000));
+    $('progT').textContent=`${fmt(pos)} / ${fmt(dur)}`;
+    const v=on.map(d=>d.volume).filter(x=>x!=null);
+    if(v.length){const avg=Math.round(v.reduce((a,b)=>a+b,0)/v.length);
+      if(document.activeElement!==$('vol')){$('vol').value=avg;$('volV').textContent=avg}}
+  }else{$('progT').textContent='--:-- / --:--';}
+}
+
+$('seek').addEventListener('mousedown',()=>seeking=true);
+$('seek').addEventListener('mouseup',()=>{seeking=false});
+
+/* ---------- 在线音乐（MusicFree 桥接） ---------- */
+let curOnlineList = [];
+let curOnlinePage = 1, curOnlineQuery = '', curOnlineProvider = '';
+let onlinePlugins = [];
+
+async function loadOnlinePlugins(){
+  try{
+    const r = await api('/api/online/plugins');
+    if(!r.ok){console.warn('online plugins err', r.msg);return;}
+    onlinePlugins = (r.plugins||[]);
+    const sel = $('onlineProvider');
+    if(!onlinePlugins.length){
+      sel.innerHTML = '<option value="">（无可用音源）</option>';
+      return;
+    }
+    sel.innerHTML = onlinePlugins.map(p=>`<option value="${esc(p.platform)}">${esc(p.platform)}</option>`).join('');
+  }catch(e){console.warn(e);}
+}
+
+function onLimitChange(){
+  const sel=$('onlineLimit'), ci=$('onlineLimitCustom');
+  ci.style.display = sel.value==='custom' ? '' : 'none';
+  if(sel.value==='custom') ci.focus();
+}
+function getOnlineLimit(){
+  const sel=$('onlineLimit').value;
+  if(sel==='custom'){
+    const n=parseInt($('onlineLimitCustom').value,10);
+    return (n>0&&n<=200)?n:30;
+  }
+  return parseInt(sel,10)||30;
+}
+
+async function doOnlineSearch(page){
+  const q = $('onlineSearch').value.trim();
+  const provider = $('onlineProvider').value;
+  if(!q){$('onlineList').innerHTML='<div class="empty">请输入关键字</div>';return;}
+  if(typeof page!=='number'||page<1)page=1;
+  curOnlineQuery=q; curOnlineProvider=provider; curOnlinePage=page;
+  $('onlineList').innerHTML='<div class="empty">搜索中…</div>';
+  const limit = getOnlineLimit();
+  const r = await api(`/api/online/search?q=${encodeURIComponent(q)}${provider?`&provider=${encodeURIComponent(provider)}`:''}&page=${page}&limit=${limit}`);
+  if(!r.ok){$('onlineList').innerHTML=`<div class="empty">${esc(r.msg||'搜索失败')}</div>`;return;}
+  const items = r.items||[];
+  curOnlineList = items;
+  renderOnlinePager(items.length, !!r.isEnd);
+  if(!items.length){$('onlineList').innerHTML='<div class="empty">无结果（本页为空，可回上一页）</div>';return;}
+  $('btnOnlineAddAll').style.display='';$('btnOnlineDlAll').style.display='';
+  $('onlineList').innerHTML = items.map((it,i)=>{
+    return `<div class="row" onclick="playOnlineNow(${i})">
+      <div style="width:28px;min-width:28px;text-align:right;color:var(--tx3);font-size:12px;user-select:none">${i+1}</div>
+      <div class="row-ico">🌐</div>
+      <div class="row-main"><div class="row-title">${esc(it.title)}</div>
+        ${it.artist?`<div class="row-sub">${esc(it.artist)}${it.album?' · '+esc(it.album):''}</div>`:''}</div>
+      <div class="row-dur">${it.duration?esc(String(it.duration)):''}</div>
+      <div class="row-act">
+        <button class="icon-btn pri" title="立即播放" onclick="event.stopPropagation();playOnlineNow(${i})">▶</button>
+        <button class="icon-btn" title="加入播放列表" onclick="event.stopPropagation();addOnlineToQueue(${i})">＋</button>
+        <button class="icon-btn" title="下载到音乐文件夹" onclick="event.stopPropagation();dlOnline(${i})">⬇</button>
+      </div></div>`;
+  }).join('');
+}
+function renderOnlinePager(count, isEnd){
+  const p = $('onlinePager');
+  if(!curOnlineQuery){p.style.display='none';return;}
+  p.style.display='flex';
+  $('onlinePageNo').textContent = `第 ${curOnlinePage} 页` + (count?` · ${count} 首`:'');
+  const prev = $('btnOnlinePrev'), next = $('btnOnlineNext');
+  prev.disabled = curOnlinePage<=1;
+  prev.style.opacity = curOnlinePage<=1 ? .45 : 1;
+  next.disabled = isEnd||count===0;
+  next.style.opacity = (isEnd||count===0) ? .45 : 1;
+}
+
+function onlinePage(delta){
+  if(delta<0 && curOnlinePage<=1)return;
+  doOnlineSearch(curOnlinePage+delta);
+}
+
+async function addOnlineToQueue(i){
+  const it = curOnlineList[i];
+  if(!it)return;
+  const payload = { provider: it.provider, id: it.id, title: it.title, artist: it.artist, album: it.album, artwork: it.artwork, duration_sec: it.duration||0 };
+  const r = await api('/api/online/add',{method:'POST',headers:{'Content-Type':'application/json'}, body:JSON.stringify({items:[payload]})});
+  if(r.ok)toast('已加入播放列表：'+it.title,'ok');else toast('加入失败','err');
+  await loadState();
+}
+
+async function playOnlineNow(i){
+  const it = curOnlineList[i];
+  if(!it)return;
+  const payload = { provider: it.provider, id: it.id, title: it.title, artist: it.artist, album: it.album, artwork: it.artwork, duration_sec: it.duration||0 };
+  const r = await api('/api/online/add',{method:'POST',headers:{'Content-Type':'application/json'}, body:JSON.stringify({items:[payload]})});
+  if(!r.ok){toast('加入失败','err');return;}
+  const idx = (r.total||1) - 1;
+  await api('/api/jump',{method:'POST',headers:{'Content-Type':'application/json'}, body:JSON.stringify({index:idx})});
+  toast('正在播放：'+it.title+'（后台下载中）','ok');
+  dlOnlineItems([it]);                       // 边听边下载
+  await loadState();
+}
+
+/* ---------- 在线音乐：批量操作与下载 ---------- */
+async function addOnlineAll(){
+  if(!curOnlineList.length){toast('没有搜索结果','err');return;}
+  const items = curOnlineList.map(it=>({provider:it.provider,id:it.id,title:it.title,artist:it.artist,album:it.album,artwork:it.artwork,duration_sec:it.duration||0}));
+  const r = await api('/api/online/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({items})});
+  if(r.ok){toast(`已加入 ${items.length} 首到播放列表`,'ok');await loadState();}
+  else toast('加入失败','err');
+}
+
+async function dlOnline(i){
+  const it = curOnlineList[i];
+  if(!it)return;
+  await dlOnlineItems([it]);
+}
+
+async function downloadOnlineAll(){
+  if(!curOnlineList.length){toast('没有搜索结果','err');return;}
+  await dlOnlineItems(curOnlineList);
+}
+
+async function dlOnlineItems(items){
+  const body = { items: items.map(it=>({provider:it.provider,id:it.id,title:it.title,artist:it.artist,duration_sec:it.duration||0})) };
+  const r = await api('/api/online/download',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(r.ok){
+    toast(`下载队列：新增 ${r.queued} 个${r.exists?`，${r.exists} 个已存在跳过`:''}`,'ok');
+    startDlPoll();
+  } else toast('下载请求失败：'+(r.msg||''),'err');
+}
+
+let dlTimer=null;
+function startDlPoll(){
+  if(dlTimer)return;
+  refreshDl();
+  dlTimer=setInterval(refreshDl,2000);
+}
+async function refreshDl(){
+  try{
+    const r = await api('/api/online/downloads');
+    const jobs = (r.jobs||[]);
+    const active = jobs.filter(j=>j.status==='pending'||j.status==='downloading');
+    if(!active.length && dlTimer){clearInterval(dlTimer);dlTimer=null;}
+    if(!jobs.length){$('dlStatus').style.display='none';return;}
+    $('dlStatus').style.display='';
+    $('dlStatus').textContent = jobs.slice(0,10).map(j=>{
+      const mb = j.size?` ${(j.size/1048576).toFixed(1)}MB`:'';
+      const mark = j.status==='done'?'✔ 已下载':j.status==='exists'?'✔ 已存在':j.status==='error'?`✘ 失败(${j.error||''})`:j.status==='downloading'?`↓ 下载中${mb}`:'… 排队中';
+      return `${mark}｜${j.artist||'未知歌手'} - ${j.title}`;
+    }).join('\n');
+  }catch(e){}
+}
+
+/* ---------- 初始化 ---------- */
+/* ---------- 音乐目录源（本地路径 / SMB 共享，可动态添加） ---------- */
+let musicSources = [];
+
+function toggleMusicSources(){
+  const box = $('msBox'), arrow = $('msArrow');
+  const show = (box.style.display === 'none');
+  box.style.display = show ? '' : 'none';
+  arrow.textContent = show ? '▾' : '▸';
+  if(show) loadMusicSources();
+}
+
+async function loadMusicSources(){
+  try{
+    const r = await api('/api/music/sources');
+    if(!r.ok){ $('msList').innerHTML = `<div class="empty">${esc(r.msg||'读取失败')}</div>`; return; }
+    musicSources = r.sources || [];
+    $('msActive').innerHTML = r.active_dir
+      ? `当前目录：<b style="color:var(--tx)">${esc(r.active_dir)}</b>`
+      : '还没有可用的音乐目录（下载前请先添加）';
+    renderMusicSources();
+  }catch(e){ console.warn(e); }
+}
+
+function _q(p){ return JSON.stringify(p).replace(/"/g,'&quot;'); }
+
+function renderMusicSources(){
+  const box = $('msList');
+  if(!musicSources.length){
+    box.innerHTML = '<div class="empty">还没有添加目录<br><span style="font-size:12px">点「＋ 添加目录」添加本地路径或 SMB 共享</span></div>';
+    return;
+  }
+  box.innerHTML = musicSources.map(s=>{
+    const badge = s.type === 'smb' ? 'SMB' : '本地';
+    const status = s.readable
+      ? `<span style="color:#4ade80">${s.writable?'可读可写':'只读'} · ${s.audio_files} 首音乐${s.sub_dirs?` · ${s.sub_dirs} 个子目录`:''}</span>`
+      : `<span style="color:#f87171">不可读${s.type==='smb' && !s.mounted ? '（未挂载）' : ''}</span>`;
+    const addr = s.type === 'smb'
+      ? `${esc(s.host||'')}/${esc(s.share||'')}${s.subpath ? '/'+esc(s.subpath):''}${s.guest?' · 匿名':''}`
+      : esc(s.container_path||'');
+    const acts = [];
+    if(!s.active) acts.push(`<button class="icon-btn" title="设为当前目录" onclick="event.stopPropagation();setActiveSource('${s.id}')">✔</button>`);
+    if(s.type === 'smb'){
+      acts.push(s.mounted
+        ? `<button class="icon-btn" title="卸载" onclick="event.stopPropagation();unmountSource('${s.id}')">⏏</button>`
+        : `<button class="icon-btn" title="挂载" onclick="event.stopPropagation();mountSource('${s.id}')">⛓</button>`);
+    }
+    acts.push(`<button class="icon-btn" title="删除" onclick="event.stopPropagation();removeSource('${s.id}',${_q(s.name)})">✕</button>`);
+    return `<div class="row">
+      <div class="row-ico">${s.type==='smb'?'🖧':'📁'}</div>
+      <div class="row-main">
+        <div class="row-title">${esc(s.name)} ${s.active?'<span style="font-size:11px;color:#4ade80">· 当前</span>':''} <span style="font-size:11px;color:var(--tx3)">[${badge}]</span></div>
+        <div class="row-sub">${addr}<br>${status} <span style="font-size:11.5px;color:var(--tx3)">${esc(s.container_path||'')}</span></div>
+      </div>
+      <div class="row-act">${acts.join('')}</div>
+    </div>`;
+  }).join('');
+}
+
+async function setActiveSource(id){
+  const r = await api('/api/music/sources/active',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+  if(r.ok){ toast('已切换当前音乐目录','ok'); loadMusicSources(); await loadState(); browseRoot(); }
+  else toast('切换失败：'+(r.msg||''),'err');
+}
+
+async function mountSource(id){
+  toast('正在挂载…','ok');
+  const r = await api('/api/music/sources/mount',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+  toast(r.ok ? '挂载成功' : '挂载失败：'+(r.msg||''), r.ok?'ok':'err');
+  loadMusicSources();
+}
+
+async function unmountSource(id){
+  const r = await api('/api/music/sources/unmount',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+  toast(r.ok ? '已卸载' : '卸载失败：'+(r.msg||''), r.ok?'ok':'err');
+  loadMusicSources();
+}
+
+async function removeSource(id, name){
+  if(!confirm(`确定删除音乐目录「${name||''}」吗？`)) return;
+  const r = await api('/api/music/sources/remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+  toast(r.ok ? '已删除' : '删除失败：'+(r.msg||''), r.ok?'ok':'err');
+  loadMusicSources();
+}
+
+function toggleMsAdd(force){
+  const el = $('msAdd');
+  const show = (force === undefined) ? (el.style.display === 'none') : !!force;
+  el.style.display = show ? '' : 'none';
+  if(show) $('msName').focus();
+}
+
+function onMsTypeChange(){
+  const t = $('msType').value;
+  $('msSmbRow').style.display = (t === 'smb') ? '' : 'none';
+  $('msPathRow').style.display = (t === 'smb') ? 'none' : '';
+  if(t === 'smb') $('msBrowser').style.display = 'none';
+}
+
+function msMsg(text, isErr){
+  const el = $('msMsg');
+  el.style.color = isErr ? '#f87171' : 'var(--tx3)';
+  el.textContent = text || '';
+}
+
+let msCurPath = '';
+let msRoots = [];
+async function msBrowse(path){
+  const p = path || $('msPath').value.trim();
+  msMsg('浏览中…');
+  const r = await api('/api/music/browse' + (p ? `?path=${encodeURIComponent(p)}` : ''));
+  if(!r.ok){ msMsg('浏览失败：'+(r.msg||''), true); return; }
+  msMsg('');
+  msCurPath = r.path;
+  msRoots = r.roots || msRoots;
+  const dirs = r.dirs || [];
+  const chips = msRoots.map(rt =>
+    `<button class="btn sm${rt.path===r.root?' pri':''}" title="${esc(rt.desc||'')}" onclick="msBrowse(${_q(rt.path)})">${esc(rt.name)}</button>`
+  ).join('');
+  $('msBrowser').style.display = '';
+  $('msBrowser').innerHTML =
+    `<div class="bar" style="gap:6px;flex-wrap:wrap;padding:2px 0 6px">
+       ${chips}
+       <button class="btn sm" onclick="msBrowse(${_q(r.parent)})">↑ 上一级</button>
+       <button class="btn sm pri" onclick="msChoose()">选这个目录</button>
+       <span style="font-size:11.5px;color:var(--tx3)">${esc(r.path)} · ${r.audio_files} 首音乐 · ${r.writable?'可写':'只读'}</span>
+     </div>` +
+    (dirs.length
+      ? dirs.map(d=>`<div style="padding:4px 2px;cursor:pointer;font-size:13px" onclick="msBrowse(${_q(d.path)})">📁 ${esc(d.name)}</div>`).join('')
+      : '<div class="empty" style="padding:6px">（没有子目录，可直接点「选这个目录」）</div>');
+}
+
+function msChoose(){
+  $('msPath').value = msCurPath;
+  $('msBrowser').style.display = 'none';
+  msMsg('已选择：' + msCurPath);
+}
+
+function msSmbPayload(){
+  return {
+    host: $('msHost').value.trim(),
+    share: $('msShare').value.trim(),
+    subpath: $('msSub').value.trim(),
+    user: $('msUser').value.trim(),
+    password: $('msPass').value,
+    guest: $('msGuest').checked,
+  };
+}
+
+async function testMusicSource(){
+  const t = $('msType').value;
+  msMsg('测试中…');
+  let r;
+  if(t === 'smb'){
+    r = await api('/api/music/sources/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(msSmbPayload())});
+    if(r.ok){
+      const p = r.probe || {};
+      msMsg(`连接成功：${p.audio_files||0} 首音乐、${p.dirs||0} 个子目录`);
+    } else msMsg('连接失败：'+(r.msg||''), true);
+  }else{
+    const path = $('msPath').value.trim();
+    if(!path){ msMsg('请先选择目录', true); return; }
+    r = await api('/api/music/browse?path='+encodeURIComponent(path));
+    if(r.ok) msMsg(`目录可用：${r.audio_files||0} 首音乐、${(r.dirs||[]).length} 个子目录`);
+    else msMsg('目录不可用：'+(r.msg||''), true);
+  }
+}
+
+async function addMusicSource(){
+  const t = $('msType').value;
+  const payload = { name: $('msName').value.trim(), type: t, auto_mount: true };
+  if(t === 'smb'){
+    Object.assign(payload, msSmbPayload());
+    if(!payload.host || !payload.share){ msMsg('请填写主机和共享名', true); return; }
+  }else{
+    payload.path = $('msPath').value.trim();
+    if(!payload.path){ msMsg('请先选择目录', true); return; }
+  }
+  msMsg('添加中…');
+  const r = await api('/api/music/sources/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  if(r.ok){
+    msMsg('');
+    toast(r.msg || '已添加','ok');
+    toggleMsAdd(false);
+    $('msName').value=''; $('msHost').value=''; $('msShare').value='';
+    $('msSub').value=''; $('msUser').value=''; $('msPass').value=''; $('msGuest').checked=false;
+    $('msPath').value='';
+    loadMusicSources();
+  } else msMsg('添加失败：'+(r.msg||''), true);
+}
+
+(async function init(){
+  await loadState();
+  const on=(state.devices||[]).filter(d=>d.online).map(d=>d.udn);
+  if(on.length&&!(state.player.targets||[]).length){
+    await api('/api/targets',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({udns:on})});
+    await loadState();
+  }
+  browse('0');
+  loadOnlinePlugins();
+  loadMusicSources();
+  setInterval(loadState,1500);
+})();
+</script>
+</body>
+</html>

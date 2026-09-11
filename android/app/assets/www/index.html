@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#04060c">
+<title>SyncDlnaPlay</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<!-- HUD 视口角标（纯装饰，不接收触摸） -->
+<div class="fx-hud" aria-hidden="true"></div>
+
+<!-- ============ 启动页 ============
+     注意：播控服务就跑在本 App 进程里，不存在"连接服务器"这回事，
+     所以这里只有启动动画，没有任何地址 / 端口 / 扫描。 -->
+<div id="setup" class="setup">
+  <div class="setup-card">
+    <div class="logo">
+      <!-- 标志：切角八边形 + 五柱频谱。青→紫→品红渐变，与 App 图标同源。 -->
+      <img src="logo.png" width="132" height="132" alt="SyncDlnaPlay"
+           style="border-radius:24%;box-shadow:0 0 34px rgba(34,230,255,.35), 0 0 70px rgba(160,113,255,.22)">
+    </div>
+    <h1 data-t="SyncDlnaPlay">SyncDlnaPlay</h1>
+    <p class="sub" id="splashSub">正在启动…</p>
+    <div class="spin lg" id="splashSpin"></div>
+    <div class="msg" id="setupMsg"></div>
+    <button class="btn pri" id="btnRetry" style="display:none">重新启动</button>
+  </div>
+</div>
+
+<!-- ============ 主界面 ============ -->
+<div id="app" class="app" style="display:none">
+
+  <header class="topbar">
+    <div class="brand" id="topTitle">设备</div>
+    <button class="topdev" id="topDev">选择音响</button>
+    <button class="iconbtn" id="btnSettings" aria-label="设置">⚙</button>
+  </header>
+
+  <main id="main">
+
+    <!-- ---------- 设备 ---------- -->
+    <section class="tab" id="tab-now" style="display:none">
+      <div id="nowBody"></div>
+    </section>
+    <section class="tab" id="tab-devices">
+      <div class="bar sticky">
+        <button class="btn sm" id="btnRescan">重新扫描</button>
+        <button class="btn sm" id="btnResync">同步校准</button>
+        <span class="grow"></span>
+        <span class="muted sm" id="devCount"></span>
+      </div>
+      <div id="devList" class="list"></div>
+      <div class="sec" id="devTip"></div>
+    </section>
+
+    <!-- ---------- 曲库 ---------- -->
+    <section class="tab" id="tab-lib" style="display:none">
+      <div class="bar sticky">
+        <div class="seg" id="libSource">
+          <button class="segbtn on" data-src="local">本机音乐</button>
+          <button class="segbtn" data-src="dlna">媒体库</button>
+        </div>
+        <button class="iconbtn" id="btnLibSearch" aria-label="搜索">🔍</button>
+        <button class="iconbtn" id="btnLibMore" aria-label="更多">⋯</button>
+      </div>
+      <div class="crumbs" id="crumbs"></div>
+      <div id="libList" class="list"></div>
+    </section>
+
+    <!-- ---------- 在线 ---------- -->
+    <section class="tab" id="tab-online" style="display:none">
+      <div class="bar sticky">
+        <input class="grow" id="onlineQ" type="search" placeholder="搜索歌曲 / 歌手" enterkeyhint="search">
+        <button class="btn sm pri" id="btnOnlineSearch">搜索</button>
+      </div>
+      <div class="bar2">
+        <select id="onlineProvider" class="grow"></select>
+        <button class="btn sm" id="btnSrcMgr" title="音源管理">音源</button>
+        <select id="onlineLimit">
+          <option value="20">20 首</option>
+          <option value="30" selected>30 首</option>
+          <option value="50">50 首</option>
+          <option value="100">100 首</option>
+        </select>
+      </div>
+      <div class="bar2" id="onlineActions" style="display:none">
+        <button class="btn sm" id="btnOnlineAll">全部加入列表</button>
+        <button class="btn sm" id="btnOnlineDl">全部下载</button>
+        <span class="grow"></span>
+        <button class="btn sm" id="btnDlStatus">下载状态</button>
+      </div>
+      <div id="onlineList" class="list"></div>
+      <div class="pager" id="onlinePager" style="display:none">
+        <button class="btn sm" id="btnPagePrev">‹ 上一页</button>
+        <span class="muted sm" id="pageInfo"></span>
+        <button class="btn sm" id="btnPageNext">下一页 ›</button>
+      </div>
+    </section>
+
+    <!-- ---------- 播放列表 ---------- -->
+    <section class="tab" id="tab-queue" style="display:none">
+      <div class="bar sticky">
+        <span class="muted sm" id="queueInfo"></span>
+        <span class="grow"></span>
+        <button class="btn sm" id="btnQueueClear">清空</button>
+      </div>
+      <div id="queueModes" class="chips" style="padding:10px 14px 0"></div>
+      <div id="queueList" class="list"></div>
+    </section>
+
+  </main>
+
+  <!-- ---------- 迷你播放条 ---------- -->
+  <div class="mini" id="mini" style="display:none">
+    <div class="mini-prog"><i id="miniProg"></i></div>
+    <div class="mini-in" id="miniOpen">
+      <div class="mini-ico" id="miniIco">♫</div>
+      <div class="mini-txt">
+        <div class="t1" id="miniTitle">未播放</div>
+        <div class="t2" id="miniSub"></div>
+      </div>
+    </div>
+    <div class="mini-ctl">
+      <button class="iconbtn" id="miniVol" title="音量">🔉</button>
+      <button class="iconbtn" id="miniPrev">⏮</button>
+      <button class="iconbtn big" id="miniPlay">▶</button>
+      <button class="iconbtn" id="miniNext">⏭</button>
+    </div>
+  </div>
+
+  <nav class="nav">
+    <button class="navbtn" data-tab="now">
+      <i><svg class="ni" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.8"/><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/><path d="M12 3.2v6.4" opacity=".5"/><path d="M19.5 17.5a8.8 8.8 0 0 1-3 2.6" opacity=".5"/></svg></i>
+      <span>正在播放</span>
+    </button>
+    <button class="navbtn on" data-tab="devices">
+      <i><svg class="ni" viewBox="0 0 24 24"><rect x="5" y="2.5" width="14" height="19" rx="2.6"/><circle cx="12" cy="14.6" r="3.4"/><circle cx="12" cy="6.7" r="1.15" fill="currentColor" stroke="none"/></svg></i>
+      <span>我的设备</span>
+    </button>
+    <button class="navbtn" data-tab="lib">
+      <i><svg class="ni" viewBox="0 0 24 24"><ellipse cx="12" cy="5.8" rx="7.6" ry="3"/><path d="M4.4 5.8v6.1c0 1.66 3.4 3 7.6 3s7.6-1.34 7.6-3V5.8"/><path d="M4.4 11.9v6.1c0 1.66 3.4 3 7.6 3s7.6-1.34 7.6-3v-6.1"/></svg></i>
+      <span>本地曲库</span>
+    </button>
+    <button class="navbtn" data-tab="online">
+      <i><svg class="ni" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M3.4 12h17.2"/><path d="M12 3.4c2.5 2.7 2.5 14.5 0 17.2"/><path d="M12 3.4c-2.5 2.7-2.5 14.5 0 17.2"/></svg></i>
+      <span>在线搜索</span>
+    </button>
+    <button class="navbtn" data-tab="queue">
+      <i><svg class="ni" viewBox="0 0 24 24"><path d="M8.5 6.5h11.6M8.5 12h11.6M8.5 17.5h11.6"/><circle cx="4.2" cy="6.5" r="1.3"/><circle cx="4.2" cy="12" r="1.3"/><circle cx="4.2" cy="17.5" r="1.3"/></svg></i>
+      <span>播放列表</span>
+    </button>
+  </nav>
+</div>
+
+<!-- ============ 底部弹出面板 ============ -->
+<div class="mask" id="mask" style="display:none"></div>
+<div class="sheet" id="sheet" style="display:none">
+  <div class="sheet-hd">
+    <span id="sheetTitle">标题</span>
+    <button class="iconbtn vi" id="sheetClose" title="关闭"><svg class="iv" viewBox="0 0 24 24"><path d="M6.2 6.2l11.6 11.6M17.8 6.2L6.2 17.8"/></svg></button>
+  </div>
+  <div class="sheet-bd" id="sheetBody"></div>
+</div>
+
+<div id="toast" class="toast"></div>
+<audio id="phone" preload="none"></audio>
+<script src="i18n.js"></script>
+<script src="plugins-runtime.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

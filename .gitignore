@@ -1,0 +1,37 @@
+# ---- 敏感 / 本机专属（严禁入库） ----
+tools/ssh_run.py
+tools/fetch_plugins.py
+android/keystore/
+android/backups/
+*.jks
+*.keystore
+
+# ---- 构建产物 ----
+android/build/
+android/screenshots/
+*.apk
+*.idsig
+*.apk.idsig
+
+# ---- 测试临时页 ----
+android/app/assets/www/_e2e.html
+android/app/assets/www/_splash.html
+android/app/assets/www/_preview*.html
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# ---- Node ----
+node_modules/
+
+# ---- 编辑器 / 系统 ----
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*~
+.idea/
+.vscode/

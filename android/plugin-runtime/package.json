@@ -1,0 +1,22 @@
+{
+  "name": "dlna-speaker-plugin-runtime",
+  "version": "1.0.0",
+  "private": true,
+  "description": "把 MusicFree 插件运行所需的 npm 依赖打包成浏览器/WebView 可执行的单文件运行时",
+  "scripts": {
+    "build": "node build.js",
+    "test": "node test/run.js"
+  },
+  "dependencies": {
+    "big-integer": "^1.6.52",
+    "buffer": "^6.0.3",
+    "cheerio": "^1.0.0",
+    "crypto-js": "^4.2.0",
+    "dayjs": "^1.11.10",
+    "esbuild": "^0.23.1",
+    "he": "^1.2.0",
+    "js-base64": "^3.7.7",
+    "pako": "^2.1.0",
+    "qs": "^6.12.0"
+  }
+}

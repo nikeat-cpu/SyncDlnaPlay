@@ -1,0 +1,4 @@
+# 本项目零第三方依赖 —— 全部使用 Python 标准库。
+# Web 层由 app/miniweb.py 提供（Flask 兼容子集），
+# 因此在 ARM 设备上无需编译、无需 pip install，镜像仅 ~60MB。
+# 保留此文件仅为兼容常规构建流程。

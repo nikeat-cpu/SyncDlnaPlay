@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 赛博朋克配色，与 app/assets/www/app.css 的 :root 保持一致 -->
+    <color name="bg">#FF04060C</color>
+    <color name="bg2">#FF080E18</color>
+    <color name="accent">#FF22E6FF</color>
+    <color name="accent2">#FFFF2D92</color>
+    <color name="ic_launcher_bg">#FF070E1A</color>
+</resources>

@@ -1,0 +1,18 @@
+services:
+  bridge:
+    build: .
+    container_name: musicfree-bridge
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      - PLUGINS_DIR=/plugins
+      - DATA_DIR=/data
+      - MUSIC_DIR=/music
+      - PORT=5001
+      - TZ=Asia/Shanghai
+    volumes:
+      - /mnt/mmc1-4/musicfree-plugins:/plugins
+      - /mnt/mmc1-4/musicfree-data:/data
+      - /mnt/mmc1-4/Music:/music
+      # 宿主 /mnt 以 rslave 透传：网页里添加的 SMB 源可被下载直接写入
+      - /mnt:/hostmnt:rslave
