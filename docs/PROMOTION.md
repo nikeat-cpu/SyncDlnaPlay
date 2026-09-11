@@ -49,7 +49,7 @@ Full docs: [README](../../#readme) · [中文说明](../../blob/main/README.zh-C
 > or a home server. So I built SyncDlnaPlay.
 >
 > 📱 ~3.7 MB Android app, runs 100% on-device
-> 🔊 Casts to any DLNA speaker, multi-room sync w/ delay calibration
+> 🔊 Select several DLNA speakers on your LAN — they all play at once, in sync (per-speaker delay calibration)
 > 🌐 Online search & download via MusicFree plugins
 > 📝 Synced lyrics + full-screen immersive mode
 > 🐳 Bonus: a 59 MB zero-dependency Docker control point for NAS/router
@@ -102,11 +102,11 @@ problem (DLNA has no native sync; the app staggers `Play` commands and calibrate
 
 ## 4. Reddit — r/Android（短版）
 
-**Title:** [Dev] I made SyncDlnaPlay — a 3.7 MB offline-first music player that casts to DLNA speakers, with online search via plugins and synced lyrics. No account, no server, MIT.
+**Title:** [Dev] I made SyncDlnaPlay — a 3.7 MB offline-first music player that casts to several DLNA speakers at once, with online search via plugins and synced lyrics. No account, no server, MIT.
 
 **Body:**
 
-Features: cast to any DLNA speaker on your Wi-Fi (multi-room sync + delay calibration), local
+Features: select several DLNA speakers on your Wi-Fi — they play at once, in sync (per-speaker delay calibration), local
 library with SD card & SMB folders, online search/download through community MusicFree plugins
 (you can add/remove sources), synced lyrics with manual offset calibration and an immersive
 full-screen mode, download-while-playing, EN/中文 UI.

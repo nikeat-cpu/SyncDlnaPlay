@@ -4,7 +4,7 @@
 
 # SyncDlnaPlay
 
-**Cast music to any DLNA speaker on your Wi-Fi — or just play it on your phone.**
+**Select several DLNA speakers on your Wi-Fi — they all play the same song, at the same time. Or just play on your phone.**
 **No account. No cloud. No home server required.**
 
 [![Platform](https://img.shields.io/badge/platform-Android%208%2B%20%7C%20Docker-22e6ff)](#install)
@@ -22,8 +22,8 @@
 ---
 
 **SyncDlnaPlay** is a cyberpunk-styled music player and DLNA caster that runs *entirely on your phone*.
-Play local files, search and download songs online, cast to DLNA speakers on your LAN with multi-room
-sync, and follow along with synced lyrics — including a full-screen immersive lyrics mode.
+Play local files, search and download songs online, select several DLNA speakers on your LAN and they play
+simultaneously in sync, and follow along with synced lyrics — including a full-screen immersive lyrics mode.
 
 It ships in two independent flavors:
 
