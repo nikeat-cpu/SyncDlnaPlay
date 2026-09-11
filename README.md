@@ -99,7 +99,7 @@ Grab the latest APK from [**Releases**](../../releases) and sideload it (`minSdk
 For a headless box (NAS / router) that casts to your speakers without a phone in the loop:
 
 ```bash
-git clone https://github.com/<your-username>/SyncDlnaPlay.git
+git clone https://github.com/nikeat-cpu/SyncDlnaPlay.git
 cd SyncDlnaPlay
 docker compose up -d --build      # web UI on http://<host>:5000
 ```

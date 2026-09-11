@@ -90,7 +90,7 @@
 适合无头设备（NAS / 路由器）脱离手机、常年给全屋音响供歌：
 
 ```bash
-git clone https://github.com/<your-username>/SyncDlnaPlay.git
+git clone https://github.com/nikeat-cpu/SyncDlnaPlay.git
 cd SyncDlnaPlay
 docker compose up -d --build      # 网页控制台 http://<host>:5000
 ```

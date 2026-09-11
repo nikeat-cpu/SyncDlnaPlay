@@ -1,6 +1,6 @@
 # 宣传文案 / Promotion Kit
 
-> 发布时把 `<your-username>` 替换成实际 GitHub 用户名。
+> 仓库地址：https://github.com/nikeat-cpu/SyncDlnaPlay
 > 所有文案均与实际功能一致，不夸大（第三方音源稳定性已在文中如实说明）。
 
 ---
@@ -54,7 +54,7 @@ Full docs: [README](../../#readme) · [中文说明](../../blob/main/README.zh-C
 > 📝 Synced lyrics + full-screen immersive mode
 > 🐳 Bonus: a 59 MB zero-dependency Docker control point for NAS/router
 >
-> MIT, no telemetry: https://github.com/<your-username>/SyncDlnaPlay
+> MIT, no telemetry: https://github.com/nikeat-cpu/SyncDlnaPlay
 
 **跟推（串第二条）**
 
@@ -64,7 +64,7 @@ Full docs: [README](../../#readme) · [中文说明](../../blob/main/README.zh-C
 > – manual lyric offset calibration because casting latency varies per file
 > – SMB shares & SD-card folders as library sources
 > – EN/中文 UI, auto-detected
-> https://github.com/<your-username>/SyncDlnaPlay
+> https://github.com/nikeat-cpu/SyncDlnaPlay
 
 ---
 
@@ -93,7 +93,7 @@ library, SMB shares, online search & download via MusicFree plugins, synced lyri
 full-screen mode. ~3.7 MB, no account, no telemetry. If no speaker is on the LAN it just plays on
 the phone instead of erroring out.
 
-Repo (MIT): https://github.com/<your-username>/SyncDlnaPlay
+Repo (MIT): https://github.com/nikeat-cpu/SyncDlnaPlay
 
 Happy to answer questions about the UPnP details — the multi-speaker sync part was the interesting
 problem (DLNA has no native sync; the app staggers `Play` commands and calibrates per-speaker delay).
@@ -113,7 +113,7 @@ full-screen mode, download-while-playing, EN/中文 UI.
 
 If it can't find a speaker it falls back to playing on the phone, so it always works.
 
-APK + source: https://github.com/<your-username>/SyncDlnaPlay
+APK + source: https://github.com/nikeat-cpu/SyncDlnaPlay
 
 There's also a Docker control-point flavor in the same repo if you'd rather drive speakers from a NAS.
 
@@ -128,7 +128,7 @@ There's also a Docker control-point flavor in the same repo if you'd rather driv
 起因是家里有几台便宜的斐讯刷机音箱，只支持 DLNA。市面上的方案要么是重 media server，要么
 App 要登录账号还要会员，干脆自己写了一个，现在整理开源出来（MIT）。
 
-仓库：https://github.com/<your-username>/SyncDlnaPlay
+仓库：https://github.com/nikeat-cpu/SyncDlnaPlay
 
 两个部分，互相独立：
 
@@ -160,7 +160,7 @@ App 要登录账号还要会员，干脆自己写了一个，现在整理开源�
 > 3.7MB 的安卓 App，不要账号、不要服务器：本地曲库 + SMB 共享 + 在线搜歌下载（MusicFree 插件生态，
 > 音源自己说了算）+ 滚动歌词与全屏沉浸模式 + 多房间同步（可做延时校准）。附带一个 59MB 的
 > Docker 控制点版本，可以扔在 NAS 上常驻。MIT 开源，无任何遥测。
-> https://github.com/<your-username>/SyncDlnaPlay
+> https://github.com/nikeat-cpu/SyncDlnaPlay
 
 ---
 
@@ -175,13 +175,13 @@ App 要登录账号还要会员，干脆自己写了一个，现在整理开源�
 > the `Play` commands across devices and lets you calibrate a per-speaker delay (measured
 > automatically). Audio never touches the control point — speakers pull the stream straight from
 > the source — so the Docker image can be 59 MB of Python stdlib and still run on a router.
-> Source (MIT): https://github.com/<your-username>/SyncDlnaPlay
+> Source (MIT): https://github.com/nikeat-cpu/SyncDlnaPlay
 
 ---
 
 ## 发布检查清单
 
-- [ ] 替换所有 `<your-username>`
+- [x] 文档链接已指向 nikeat-cpu
 - [ ] Release 附上 `SyncDlnaPlay-standalone-v2.12.apk`（与 CHANGELOG 版本一致）
 - [ ] README 顶部徽章链接可点
 - [ ] 截图为最新版本界面
