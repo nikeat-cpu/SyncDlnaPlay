@@ -94,6 +94,13 @@ Grab the latest APK from [**Releases**](../../releases) and sideload it (`minSdk
 > No permissions are requested beyond what the features need (storage read for the library, notifications
 > for the keep-alive notification while casting).
 
+Two builds ship with every release — same features, different default language:
+
+| APK | Language behaviour |
+|---|---|
+| `SyncDlnaPlay-standalone-v2.12.apk` | Follows your phone's language (English / 简体中文) |
+| `SyncDlnaPlay-standalone-v2.12-en.apk` | Starts in **English** whatever your phone language is (still switchable in Settings → 语言 / Language) |
+
 ### Docker control point
 
 For a headless box (NAS / router) that casts to your speakers without a phone in the loop:

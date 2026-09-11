@@ -68,6 +68,17 @@ if left:
 print("    已清理 %s；assets/www 干净" % (removed or "（无需清理）"))
 PY
 
+# 语言变体：BUILD_LANG=en|zh 时复制一份 assets 并改掉 i18n.js 的默认语言。
+# 源目录不动；不设该变量 = 原版（跟随系统语言自动选择）。
+ASSETS="$APP/assets"
+APK_SUFFIX=""
+if [ -n "${BUILD_LANG:-}" ]; then
+  echo "[1b/8] 生成语言变体 assets (BUILD_LANG=$BUILD_LANG)"
+  python tools/make_lang_assets.py "$APP/assets" "$OUT/assets_$BUILD_LANG" "$BUILD_LANG"
+  ASSETS="$OUT/assets_$BUILD_LANG"
+  APK_SUFFIX="-$BUILD_LANG"
+fi
+
 echo "[2/8] 编译资源 (aapt2 compile)"
 "$BT/aapt2.exe" compile --dir "$APP/res" -o "$OUT/res.zip"
 
@@ -76,7 +87,7 @@ echo "[3/8] 链接资源并生成 R.java (aapt2 link)"
   -o "$OUT/base.apk" \
   -I "$AJAR" \
   --manifest "$APP/AndroidManifest.xml" \
-  -A "$APP/assets" \
+  -A "$ASSETS" \
   --java "$OUT/gen" \
   --min-sdk-version 26 --target-sdk-version 34 \
   --auto-add-overlay \
@@ -130,7 +141,7 @@ if [ ! -f "$KS" ]; then
     -dname "CN=Android Debug,O=Android,C=CN" >/dev/null 2>&1
   echo "    已生成调试证书"
 fi
-APK_NAME="SyncDlnaPlay-standalone-v2.12.apk"
+APK_NAME="SyncDlnaPlay-standalone-v2.12${APK_SUFFIX}.apk"
 "$JAVA" -jar "$BT/lib/apksigner.jar" sign \
   --ks "$KS" --ks-pass pass:android --key-pass pass:android \
   --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
