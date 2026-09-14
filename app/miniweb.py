@@ -313,23 +313,27 @@ class MiniApp:
 
     @staticmethod
     def _finalize(out):
-        # 兼容 (Response, status) 元组：保留 Response 本体并应用状态码
+        # 兼容 (body, status) / (body, status, headers) 元组：
+        # 注意 status 必须在这里就解出来并一直带下去，早先的实现会在下面
+        # 重新赋成 200，导致 `return "xxx", 404` 这类纯文本错误响应状态码丢失。
+        status = 200
         if isinstance(out, tuple):
             if len(out) >= 2 and isinstance(out[0], Response):
                 if isinstance(out[1], int):
                     out[0].status = out[1]
                 return out[0]
-            if len(out) == 2:
-                out, status = out
-            elif len(out) == 3:
+            if len(out) == 3:
                 out, status = out[0], out[1]
+            elif len(out) == 2:
+                out, status = out
             else:
                 out = out[0]
             if isinstance(out, Response):
+                if isinstance(status, int):
+                    out.status = status
                 return out
         if isinstance(out, Response):
             return out
-        status = 200
         if isinstance(out, (dict, list)):
             return Response(json.dumps(out, ensure_ascii=False, default=str),
                             status, "application/json; charset=utf-8")
