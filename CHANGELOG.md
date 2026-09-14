@@ -128,7 +128,53 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); versions are `X.
 - **Standalone rewrite**: the DLNA control point, library scanner, HTTP server and plugin runtime
   all run inside the app — no home server required.
 
+## Docker control point — 2026-09-14
+
+### Changed: the web UI and the Android standalone app now share **one** front end
+The Docker image used to ship its own desktop-oriented minified page (`app/static/index.html`, 56 KB) which
+had drifted behind the Android app. It now serves the Android zero-dependency SPA (`android/app/assets/www`)
+directly — one codebase for both, so every Android feature is available in the Docker build by construction
+and there is no second UI to maintain.
+
+### Added (endpoints the SPA needs that the Docker back end was missing)
+- **Source management**: `/api/plugins`, `/api/plugins/code`, `/api/plugins/install`, `/api/plugins/remove`,
+  `/api/plugins/toggle` — accepts a URL, raw plugin source, subscription JSON or a share code.
+- **Online playback**: `/api/online/register` + `/stream?sid=` — the browser resolves a direct link with the
+  plugin runtime, the server stores it and proxies the pull with the right Referer/Cookie so the speaker
+  never hits a 403.
+- **Plugin data proxy**: `/__proxy` — works around third-party CORS and the headers browsers forbid JS to set.
+- **SMB**: `/api/smb/scan`, `/api/smb/browse` — scan for hosts with port 445 open, list shares, browse folders.
+- **Lyrics**: `/api/lyric` (sibling `.lrc`), `/api/lyric/byname`, `/api/lyric/save` (title-keyed store).
+- **Playlist export**: `/api/export/playlist` — writes `<DATA_DIR>/playlists/*.m3u`.
+- **Audio by id**: `/media?id=` — local library (`L:`), absolute path (`f:`), or a DLNA ObjectID (resolved, 302).
+
+### Added (modules)
+- `app/plugins.py` — plugin store (port of Android's `Plugins.java`)
+- `app/smbtool.py` — SMB discovery and browsing (socket scan of port 445 + `smbclient`, with a `smbutil` fallback on macOS)
+- `app/lyricstore.py` — local lyrics and the title-keyed lyric store (UTF-8 → GBK fallback)
+
+### Added (env vars)
+`WEB_DIR`, `DATA_DIR`, `PLUGINS_DIR`, `BUILTIN_PLUGINS_DIR`, `STREAM_TTL_MS`
+
+### Fixed
+- **`miniweb` dropped the status code of plain-text responses**: `return "xxx", 404` was served as 200.
+  `(body, status)` / `(body, status, headers)` tuples now keep their status.
+- `music_sources` hard-coded `/data/music_sources.json`, which broke outside a container; it now follows
+  `DATA_DIR` (still `/data` inside the image).
+- The image installs `samba-client` (needed to list share names). Like `tzdata` this is best-effort and
+  will not fail the build.
+
+### Roadmap item completed
+- [x] Persistent queue for the Docker build — queue persistence is a pure front-end feature (localStorage),
+  so unifying the front end delivers it for free.
+
+### Changed (build)
+- `Dockerfile` now copies `android/app/assets/www` and `android/app/assets/plugins` into the image
+  (`/app/web`, `/app/builtin-plugins`), so the build context must include `android/`.
+
 ## Docker flavor
 
-The Docker control point evolves independently (zero-dependency Python, host networking,
-multi-room delay alignment, SMB mounting via the host namespace). See [docs/DOCKER.zh-CN.md](docs/DOCKER.zh-CN.md).
+The Docker control point shares the Android standalone app's front end; the back end is dependency-free
+Python (host networking, multi-room delay alignment, SMB mounting via the host namespace). See
+[docs/DOCKER.zh-CN.md](docs/DOCKER.zh-CN.md).
+

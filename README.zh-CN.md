@@ -108,32 +108,46 @@ docker compose up -d --build      # 网页控制台 http://<host>:5000
 镜像基于 `python:3.12-alpine`，Web 层是自研的 Flask 兼容子集，**零第三方依赖**——
 **仅 59MB**，秒级构建、内存占用极低。音频流不经过容器：音响直接向音乐源拉流。
 
+**网页与安卓独立版是同一套前端。** 镜像里托管的就是 `android/app/assets/www` 那套零依赖 SPA，
+所以两端的界面与功能始终一致（多语言、主题、沉浸歌词、队列持久化、音源管理、SMB 浏览……全都有），
+不存在「手机上有、网页上没有」的差异。后端按 SPA 的接口契约补齐，改动前端只需动一处。
+
+> 镜像内已装 `samba-client`，用于「扫描局域网 / 列共享名 / 浏览共享目录」。
+> 若在宿主机直接跑（非容器），则需要系统有 `smbclient`；macOS 上没装也能列共享名（自动回退系统自带 `smbutil`）。
+
+> 本机调试：`./run-macos.sh` 会起服务、自动探测本机 IP 并喂给 `HOST_IP`，然后打开 `http://<本机IP>:5000`。
+
+数据（自建音源 / 歌词库 / 导出的播放列表 / 曲库源配置）统一放在 `DATA_DIR`，容器内为 `/data`，
+即 `docker-compose.yml` 里已挂载的持久化分区。
+
 ---
 
 ## 工作原理
 
 ```
 Android 独立版                             Docker 版
-┌─────────────────────────────┐          ┌──────────────────┐
-│ WebView UI（SPA，中英双语）   │          │  Web UI (:5000)  │
-│ ├─ 内置 HTTP 服务  :8765     │          │  UPnP 控制点      │
-│ ├─ DLNA 控制点              │  SSDP    │  （纯标准库）      │
-│ ├─ SMB 客户端 (jcifs-ng)    │ ───────► └────────┬─────────┘
-│ ├─ MediaStore 曲库          │                   │ SetURI + Play
-│ └─ MusicFree 插件运行时      │                   ▼
-└──────────────┬──────────────┘          ┌──────────────────┐
-               │ SetURI + Play           │    DLNA 音响      │
-               ▼                         │   （负责发声）     │
-        ┌──────────────────┐             └────────┬─────────┘
-        │    DLNA 音响      │                      │ HTTP GET
-        │   （负责发声）     │ ◄────────────────────┘
-        └────────┬─────────┘        音响直接从音乐源拉取音频流，
-                 │ HTTP GET         控制端零带宽消耗
-                 ▼
-      手机存储 / SMB / 在线 CDN
+┌─────────────────────────────┐          ┌──────────────────────────┐
+│ WebView UI（SPA，中英双语）   │          │  同一套 SPA（浏览器里跑）  │
+│ ├─ 内置 HTTP 服务  :8765     │          │  ├─ Python HTTP :5000    │
+│ ├─ DLNA 控制点              │  SSDP    │  ├─ DLNA 控制点（纯标准库）│
+│ ├─ SMB 客户端 (jcifs-ng)    │ ───────► │  ├─ SMB 客户端 (smbclient)│
+│ ├─ MediaStore 曲库          │          │  ├─ 本地/挂载曲库扫描      │
+│ └─ MusicFree 插件运行时      │          │  └─ /__proxy 取数代理     │
+└──────────────┬──────────────┘          └────────────┬─────────────┘
+               │ SetURI + Play                        │ SetURI + Play
+               ▼                                      ▼
+        ┌──────────────────┐                  ┌──────────────────┐
+        │    DLNA 音响      │                  │    DLNA 音响      │
+        │   （负责发声）     │                  │   （负责发声）     │
+        └────────┬─────────┘                  └────────┬─────────┘
+                 │ HTTP GET                            │ HTTP GET
+                 ▼                                     ▼
+      手机存储 / SMB / 在线 CDN            本地/挂载目录 · /stream?sid= 代理
 ```
 
 控制端只负责「发号施令」，**音频流从音乐源直达音响**，手机与容器几乎零负载。
+两端的差别只在「前端跑在哪」：安卓版跑在 WebView 里，Docker 版跑在浏览器里；
+插件运行时（`plugins-runtime.js`）本身就是纯 JS，浏览器里同样能跑。
 
 ---
 
@@ -166,13 +180,28 @@ SyncDlnaPlay/
 │   └── screenshots/
 ├── Dockerfile                 ┐
 ├── docker-compose.yml         ├─ 🐳 Docker 控制点（零第三方依赖）
-├── app/                       │    server.py / upnp.py / miniweb.py / static 网页
-├── musicfree-bridge/          ┘    在线音源解析桥（可选）
+├── app/                       │    server.py / upnp.py / miniweb.py
+├── musicfree-bridge/          ┘    在线音源解析桥（可选，独立 Node 方案）
 └── android/                       📱 独立版 App（无 Gradle 构建链）
     ├── app/  (java + assets/www + res)
+    │   └── assets/www/            ← ⭐ 网页前端单一源：Docker 版直接托管这一份
     ├── libs/ (jcifs-ng, bcprov, slf4j-nop)
     ├── build.sh / setup_toolchain.sh
     └── tools/ (E2E、截图、图标与打包脚本)
+```
+
+Docker 控制点的后端模块：
+
+```
+app/
+├── server.py        路由与全局状态（DLNA 控制点 + 播放调度 + 全部 REST 接口）
+├── upnp.py          SSDP 发现 / SOAP 调用 / DIDL 解析（east 零依赖）
+├── miniweb.py       自研 Flask 兼容子集（路由、Range、JSON）
+├── music_sources.py 曲库目录源（本地路径 / SMB，经宿主 namespace 挂载）
+├── plugins.py       音源仓库（MusicFree 插件增删启停，对应安卓的 Plugins.java）
+├── smbtool.py       SMB 发现与浏览（socket 扫 445 + smbclient / smbutil）
+├── lyricstore.py    本地 .lrc 与标题歌词库
+└── run-macos.sh     （在上一级目录）本机 macOS 启动脚本
 ```
 
 ---
@@ -224,9 +253,10 @@ App 只在使用时工作；投屏播放时用常驻通知防止系统杀后台�
 - [ ] 车机 / 蓝牙输出目标
 - [ ] 歌词翻译行
 - [ ] F-Droid / Play 上架评估
-- [ ] Docker 版队列持久化
+- [x] ~~Docker 版队列持久化~~ —— 已于 2026-09-14 完成（网页与安卓合并为同一套前端，队列持久化随之生效）
 
-欢迎 PR —— 前端是零依赖 SPA（`android/app/assets/www`），改界面只需要一个文本编辑器。
+欢迎 PR —— 前端是零依赖 SPA（`android/app/assets/www`），改界面只需要一个文本编辑器；
+**改一次两端同时生效**（Docker 版直接托管这一份）。
 
 ## 参与贡献
 

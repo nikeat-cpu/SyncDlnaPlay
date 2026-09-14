@@ -118,33 +118,53 @@ The image is `python:3.12-alpine` + **standard library only** (the web layer is 
 subset) → **59 MB**, second-level builds, tiny RAM footprint. Audio never passes through the container:
 speakers pull streams straight from the source.
 
+**The web UI and the Android app are the same front end.** The image serves the exact same
+zero-dependency SPA from `android/app/assets/www`, so both builds always have identical screens and
+features (bilingual UI, themes, immersive lyrics, persistent queue, source manager, SMB browsing…).
+Nothing exists on the phone but not in the browser. The Python back end implements the SPA's API
+contract, so a front-end change is made in exactly one place.
+
+> The image bundles `samba-client` for "scan the LAN / list shares / browse folders".
+> Running on a host instead? You need `smbclient` there — on macOS share *names* still work
+> without it (falls back to the built-in `smbutil`).
+
+> Local debugging: `./run-macos.sh` starts the server, detects your LAN IP, feeds it to `HOST_IP`
+> and points you at `http://<your-ip>:5000`.
+
+All mutable data (your own sources, the lyric store, exported playlists, the folder-source config)
+lives under `DATA_DIR` — `/data` inside the container, i.e. the persistent volume already wired up
+in `docker-compose.yml`.
+
 ---
 
 ## How it works
 
 ```
 Android app                              Docker flavor
-┌─────────────────────────────┐          ┌──────────────────┐
-│ WebView UI (SPA, bilingual) │          │  Web UI (:5000)  │
-│ ├─ HTTP server  :8765       │          │  UPnP ControlPt  │
-│ ├─ DLNA control point       │  SSDP    │  (stdlib only)   │
-│ ├─ SMB client (jcifs-ng)    │ ───────► └────────┬─────────┘
-│ ├─ MediaStore library       │                   │ SetURI + Play
-│ └─ MusicFree plugin runtime │                   ▼
-└──────────────┬──────────────┘          ┌──────────────────┐
-               │ SetURI + Play           │    DLNA speaker  │
-               ▼                         │  (renders audio) │
-        ┌──────────────────┐             └────────┬─────────┘
-        │   DLNA speaker   │                      │ HTTP GET
-        │  (renders audio) │ ◄────────────────────┘
-        └────────┬─────────┘        speaker pulls the audio stream
-                 │ HTTP GET         directly from the source
-                 ▼
-      phone storage / SMB / online CDN
+┌─────────────────────────────┐          ┌──────────────────────────┐
+│ WebView UI (SPA, bilingual) │          │  the same SPA (browser)  │
+│ ├─ HTTP server  :8765       │          │  ├─ Python HTTP  :5000   │
+│ ├─ DLNA control point       │  SSDP    │  ├─ DLNA control point   │
+│ ├─ SMB client (jcifs-ng)    │ ───────► │  ├─ SMB (smbclient)      │
+│ ├─ MediaStore library       │          │  ├─ local/mounted scan   │
+│ └─ MusicFree plugin runtime │          │  └─ /__proxy data relay  │
+└──────────────┬──────────────┘          └────────────┬─────────────┘
+               │ SetURI + Play                        │ SetURI + Play
+               ▼                                      ▼
+        ┌──────────────────┐                  ┌──────────────────┐
+        │   DLNA speaker   │                  │   DLNA speaker   │
+        │  (renders audio) │                  │  (renders audio) │
+        └────────┬─────────┘                  └────────┬─────────┘
+                 │ HTTP GET                            │ HTTP GET
+                 ▼                                     ▼
+      phone storage / SMB / online CDN     local dirs · /stream?sid= relay
 ```
 
 The control side only *issues commands*. Audio streams flow **directly from the source to the speaker**,
 so casting costs almost nothing on the phone or the container.
+
+The two builds differ only in *where the front end runs*: in a WebView on Android, in your browser for
+Docker. The plugin runtime (`plugins-runtime.js`) is plain JavaScript, so it runs in both.
 
 ---
 
@@ -178,14 +198,29 @@ SyncDlnaPlay/
 │   ├── DOCKER.zh-CN.md        ← Docker 版完整部署文档（中文，含 iStoreOS 踩坑记录）
 │   └── screenshots/
 ├── Dockerfile                 ┐
-├── docker-compose.yml         ├─ 🐳 Docker 控制点（零第三方依赖，纯 Python 标准库）
-├── app/                       │    server.py / upnp.py / miniweb.py / static web UI
-├── musicfree-bridge/          ┘    在线音源解析桥（可选组件）
-└── android/                       📱 独立运行 Android App（无 Gradle 构建链）
+├── docker-compose.yml         ├─ 🐳 Docker control point (stdlib-only Python)
+├── app/                       │    server.py / upnp.py / miniweb.py / plugins.py / smbtool.py / lyricstore.py
+├── musicfree-bridge/          ┘    optional standalone Node bridge for online sources
+└── android/                       📱 Standalone Android app (no-Gradle toolchain)
     ├── app/  (java + assets/www + res)
+    │   └── assets/www/            ← ⭐ the single front end: the Docker build serves this exact folder
     ├── libs/ (jcifs-ng, bcprov, slf4j-nop)
     ├── build.sh / setup_toolchain.sh
-    └── tools/ (E2E、截图、图标与打包脚本)
+    └── tools/ (E2E, screenshots, icons, packaging)
+```
+
+Docker back-end modules:
+
+```
+app/
+├── server.py        routes + global state (DLNA control point, playback scheduler, all REST endpoints)
+├── upnp.py          SSDP discovery / SOAP / DIDL parsing (stdlib only)
+├── miniweb.py       hand-rolled Flask-compatible subset (routing, Range, JSON)
+├── music_sources.py folder sources (local path / SMB, mounted via the host namespace)
+├── plugins.py       plugin store — add/remove/enable MusicFree sources (port of Android's Plugins.java)
+├── smbtool.py       SMB discovery & browsing (socket scan of 445 + smbclient / smbutil)
+├── lyricstore.py    sibling .lrc lookup and the title-keyed lyric store
+run-macos.sh         (one level up) start the server on macOS with HOST_IP auto-detected
 ```
 
 ---
@@ -240,10 +275,11 @@ explicitly search.
 - [ ] Car / Bluetooth routing as an output target
 - [ ] Per-source lyric providers & translation lines
 - [ ] Optional F-Droid / Play publishing
-- [ ] Docker flavor: queue persistence across restarts
+- [x] ~~Docker flavor: queue persistence across restarts~~ — done 2026-09-14 (the web UI and the Android app now share one front end, which carries queue persistence with it)
 
 PRs are welcome — the frontend is a dependency-free SPA (`android/app/assets/www`), so most UI changes
-need nothing but a text editor.
+need nothing but a text editor — and **one change now lands in both builds** (the Docker image serves
+that same folder).
 
 ## Contributing
 
