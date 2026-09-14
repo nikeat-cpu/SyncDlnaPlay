@@ -834,6 +834,26 @@ class MediaServer:
             total = len(items)
         return True, items, total
 
+    def browse_metadata(self, object_id: str, timeout: int = 10):
+        """按 ObjectID 取单个对象的元数据（用于把曲目 id 解析回资源地址）"""
+        if not self._ctrl or not object_id:
+            return None
+        ok, res = soap_call(self._ctrl, CD, "Browse", {
+            "ObjectID": object_id,
+            "BrowseFlag": "BrowseMetadata",
+            "Filter": "*",
+            "StartingIndex": 0,
+            "RequestedCount": 1,
+            "SortCriteria": "",
+        }, timeout=timeout)
+        if not ok:
+            return None
+        items = parse_didl(res.get("Result", ""))
+        for it in items:
+            if it.get("url"):
+                return it
+        return items[0] if items else None
+
     def to_dict(self):
         return {
             "ip": self.ip,

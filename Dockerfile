@@ -13,17 +13,28 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     TZ=Asia/Shanghai \
     HTTP_PORT=5000 \
-    PREFER_NET="192.168.1."
+    PREFER_NET="192.168.1." \
+    WEB_DIR=/app/web \
+    BUILTIN_PLUGINS_DIR=/app/builtin-plugins \
+    DATA_DIR=/data \
+    PLUGINS_DIR=/data/plugins
 
 WORKDIR /app
 
-# 时区数据：尽力安装，失败不阻断构建（无 tzdata 时回退到 TZ 环境变量的 POSIX 写法）
+# 时区数据 + SMB 客户端（浏览局域网共享用）：
+# 都是「尽力安装」，失败不阻断构建（缺 smbclient 时 SMB 浏览会给明确提示）
 RUN apk add --no-cache tzdata >/dev/null 2>&1 || true
+RUN apk add --no-cache samba-client >/dev/null 2>&1 || true
 
 # 无需 pip install —— 全部使用标准库，构建秒级完成
 COPY app/ ./app/
 
-RUN mkdir -p /music
+# 网页前端：直接用安卓 App 那一套 SPA，两端共用同一份代码，功能天然对齐
+COPY android/app/assets/www/ ./web/
+# 内置音源（MusicFree 插件）
+COPY android/app/assets/plugins/ ./builtin-plugins/
+
+RUN mkdir -p /music /data
 
 EXPOSE 5000
 

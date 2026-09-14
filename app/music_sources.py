@@ -26,6 +26,23 @@ log = logging.getLogger("dlna.sources")
 
 HOST_MNT_ROOT = "/mnt/smb"            # 宿主挂载点根目录
 CONTAINER_MNT_ROOT = "/hostmnt/smb"   # 容器内对应目录
+
+
+def default_conf():
+    """配置文件路径。
+
+    优先级：MUSIC_SOURCES_FILE > DATA_DIR/music_sources.json > /data（容器默认）。
+    server.py 会把解析好的 DATA_DIR 写回环境变量，所以本机直接跑时落点是
+    <项目根>/data，而不是不存在的 /data。
+    """
+    explicit = os.environ.get("MUSIC_SOURCES_FILE", "").strip()
+    if explicit:
+        return explicit
+    d = os.environ.get("DATA_DIR", "").strip() or "/data"
+    return os.path.join(d, "music_sources.json")
+
+
+# 兼容旧引用（惰性求值请用 default_conf()）
 DEFAULT_CONF = "/data/music_sources.json"
 AUDIO_EXTS = {"mp3", "flac", "wav", "m4a", "aac", "ogg", "ape", "wma"}
 
@@ -404,6 +421,5 @@ _singleton = None
 def get_sources(fallback_dir=""):
     global _singleton
     if _singleton is None:
-        _singleton = MusicSources(os.environ.get("MUSIC_SOURCES_FILE", DEFAULT_CONF),
-                                  fallback_dir=fallback_dir)
+        _singleton = MusicSources(default_conf(), fallback_dir=fallback_dir)
     return _singleton

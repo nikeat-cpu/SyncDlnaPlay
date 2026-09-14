@@ -24,6 +24,9 @@ __pycache__/
 .venv/
 venv/
 
+# ---- 运行时数据（音源 / 歌词库 / 导出的播放列表 / 曲库源配置） ----
+data/
+
 # ---- Node ----
 node_modules/
 
