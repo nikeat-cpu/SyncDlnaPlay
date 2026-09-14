@@ -68,6 +68,12 @@
       </div>
       <div class="crumbs" id="crumbs"></div>
       <div id="libList" class="list"></div>
+      <div class="bar2" id="libActions" style="display:none">
+        <button class="btn sm" id="btnLibAll">全部加入列表</button>
+        <button class="btn sm" id="btnLibExport">⤓ 库列表</button>
+        <span class="grow"></span>
+        <span class="muted sm" id="libCount"></span>
+      </div>
     </section>
 
     <!-- ---------- 在线 ---------- -->
@@ -105,9 +111,12 @@
       <div class="bar sticky">
         <span class="muted sm" id="queueInfo"></span>
         <span class="grow"></span>
+        <button class="btn sm" id="btnQueueSave">💾 另存为</button>
+        <button class="btn sm" id="btnQueueLists">📂 我的</button>
         <button class="btn sm" id="btnQueueClear">清空</button>
       </div>
       <div id="queueModes" class="chips" style="padding:10px 14px 0"></div>
+      <div id="queueSaved" class="chips" style="padding:8px 14px 0;display:none"></div>
       <div id="queueList" class="list"></div>
     </section>
 

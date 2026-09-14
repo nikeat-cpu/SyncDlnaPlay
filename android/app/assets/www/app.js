@@ -151,6 +151,7 @@ async function boot() {
   $('app').style.display = 'flex';
   switchTab(S.tab, true);
   loadProviders();
+  await loadCurQueue();
   await tick(true);
   await loadLib();
   if (S.poll) clearInterval(S.poll);
@@ -179,6 +180,7 @@ async function tick(silent) {
     renderQueue();
     if (S.tab === 'now') refreshNow();
     updateLyricProgress(nowPlaying().pos);
+    pushMediaState();
   } catch (e) {
     if (!silent) console.warn('state', e);
     $('topDev').textContent = '连接已断开';
@@ -385,6 +387,7 @@ function renderLib(r) {
   box.innerHTML = rows.join('');
   renderCrumbs();
   if (r.truncated) box.innerHTML += '<div class="sec">目录太大，仅索引了前一部分曲目。</div>';
+  libActionsUpdate();
 }
 
 function joinPath(a, b) { return a ? (a.replace(/\/+$/, '') + '/' + b) : b; }
@@ -458,6 +461,7 @@ async function loadLibSearch() {
     if (!S._libItems.length) { box.innerHTML = '<div class="empty">没找到「' + esc(kw) + '」</div>'; return; }
     box.innerHTML = `<div class="sec">找到 ${S._libItems.length} 首</div>` +
       S._libItems.map((t, i) => trackRow(t, i, 'lib')).join('');
+    libActionsUpdate();
   } catch (e) { box.innerHTML = '<div class="empty">搜索失败：' + esc(e.message) + '</div>'; }
 }
 
@@ -576,7 +580,9 @@ async function musicSourcesSheet() {
         ${logCount ? '<button class="btn grow" onclick="clearCrashLogs()">清空</button>' : ''}
       </div>
 
-      <div class="sec-title">关于</div>
+    </div>
+
+    <div class="sec-title">关于</div>
       <div class="sm muted">独立运行版：DLNA 控制、曲库扫描、在线音源全部在手机本机运行，不依赖家中服务器，换任何网络都能用。</div>`;
   } catch (e) { $('sheetBody').innerHTML = '<div class="empty">读取失败：' + esc(e.message) + '</div>'; }
 }
@@ -658,7 +664,7 @@ function trackKeyOf(t) {
   return [t.source || 'local', t.provider || '', t.id || '', t.title || ''].join('|');
 }
 
-/** 取歌词：在线曲目问插件，本地曲目读同目录 .lrc */
+/** 取歌词：在线曲目问插件；本地曲目读同目录 .lrc；都没有再查标题歌词库；本地歌还会在线搜词 */
 async function loadLyric(t) {
   const box = $('lyricBox');
   if (!box) return;
@@ -668,19 +674,69 @@ async function loadLyric(t) {
   renderLyric();
   let lrc = '';
   try {
-    if (t.source === 'online' && window.PluginHost && t.provider && t.id) {
-      const r = await window.PluginHost.lyric({ provider: t.provider, id: t.id });
-      lrc = (r && r.lrc) || '';
+    if (t.source === 'online' && window.PluginHost && t.provider && (t.id || t.oid)) {
+      const r = await window.PluginHost.lyric({ provider: t.provider, id: t.id || t.oid });
+      lrc = (r && (r.lrc || r.rawLrc || r.lyric)) || '';
     }
     if (!lrc && t.id) {
       const r = await api('/api/lyric?id=' + encodeURIComponent(t.id), { _timeout: 12000 });
       lrc = (r && r.lrc) || '';
     }
-  } catch (e) { lrc = ''; }
+    if (!lrc && t.title) {                    // 标题歌词库（下载/本地歌在线找词后落盘）
+      const r = await api('/api/lyric/byname?artist=' + enc(t.artist) + '&title=' + enc(t.title), { _timeout: 8000 });
+      lrc = (r && r.lrc) || '';
+    }
+    if (!lrc && t.source !== 'online' && (t.title || t.artist)) {
+      lrc = await onlineLyricForLocal(t);     // 本地音乐：搜索匹配并下载歌词
+    }
+  } catch (e) { lrc = lrc || ''; }
   if (S.lyric.key !== key) return;      // 这期间已经切歌了
   const lines = parseLrc(lrc);
   S.lyric = { key: key, lines: lines, idx: -1, msg: lines.length ? '' : '这首歌没有歌词' };
   renderLyric();
+}
+
+function enc(s) { return encodeURIComponent(s == null ? '' : s); }
+
+/** 本地音乐在线找歌词：按歌名+歌手搜索，取最匹配一首的歌词，落盘后返回 */
+async function onlineLyricForLocal(t) {
+  const PH = window.PluginHost;
+  if (!PH || !PH.search) return '';
+  const neg = lyricNoMatchKey(t);
+  try { const nm = localStorage.getItem('dlna_lyric_nomatch') || ''; if (nm.indexOf(neg) >= 0) return ''; } catch (e) { }
+  try {
+    const q = ((t.artist || '') + ' ' + (t.title || '')).trim();
+    const r = await PH.search({ q: q, provider: (S.online && S.online.provider) || '', limit: 8 });
+    const items = (r && r.items) || [];
+    if (!items.length) { markLyricNoMatch(t); return ''; }
+    let hit = null, best = -1;
+    const want = normTitle(t.title);
+    for (let i = 0; i < items.length; i++) {
+      const sr = normTitle(items[i].title);
+      const sc = (want && sr) ? (want === sr ? 100 : (want.indexOf(sr) >= 0 || sr.indexOf(want) >= 0 ? 70 : 0)) : 0;
+      if (sc > best) { best = sc; hit = items[i]; }
+    }
+    if (!hit || !(hit.id || hit.oid)) { markLyricNoMatch(t); return ''; }
+    const lr = await PH.lyric({ provider: hit.provider || hit.platform, id: hit.id || hit.oid });
+    const lrc = (lr && (lr.lrc || lr.rawLrc || lr.lyric)) || '';
+    if (!lrc.trim()) { markLyricNoMatch(t); return ''; }
+    try { await apiPost('/api/lyric/save', { artist: t.artist || '未知歌手', title: t.title || '未知', lrc: lrc }); } catch (e) { }
+    return lrc;
+  } catch (e) { return ''; }
+}
+
+function normTitle(s) {
+  return (s || '').toLowerCase().replace(/\s+/g, ' ')
+    .replace(/[()\[\]【】\/\\\-_~!！，,。.、:：'\u2019\"\u201c\u201d?？]/g, '').trim();
+}
+function lyricNoMatchKey(t) { return (t.title || '') + '|' + (t.artist || ''); }
+function markLyricNoMatch(t) {
+  try {
+    const k = 'dlna_lyric_nomatch';
+    let sv = localStorage.getItem(k) || '';
+    const key = lyricNoMatchKey(t);
+    if (sv.indexOf(key) < 0) { sv = (sv + '|' + key); if (sv.length > 2000) sv = sv.slice(sv.length - 2000); localStorage.setItem(k, sv); }
+  } catch (e) { }
 }
 
 function renderLyric() {
@@ -732,6 +788,7 @@ function immBuild() {
   d.innerHTML =
     '<div class="imm-head">'
     + '<div class="imm-meta"><div id="immTitle"></div><div id="immSub" class="sm muted"></div></div>'
+    + '<button class="btn sm" id="immLandBtn" onclick="toggleImmLand()">⇄ 横屏</button>'
     + '<button class="btn sm" onclick="exitImmersive()">✕ 退出</button></div>'
     + '<div class="imm-lrc lrc-box" id="immLrc"></div>'
     + '<div class="imm-ctl">'
@@ -745,6 +802,12 @@ function immBuild() {
     + '<span id="immVolVal" class="sm" style="min-width:36px;text-align:right"></span>'
     + '</div></div>';
   d.addEventListener('dblclick', exitImmersive);
+  d.addEventListener('click', function (e) {
+    const tg = e.target;
+    if (tg.closest && tg.closest('.imm-ctl')) return;     // 控制按钮/滑条自身照常工作
+    if (tg.closest && tg.closest('.imm-head')) return;
+    toggleImmCtl();                                       // 点歌词或空白：唤出/收起控件
+  });
   document.body.appendChild(d);
 }
 
@@ -767,8 +830,36 @@ function enterImmersive() {
 
 function exitImmersive() {
   S._imm = false;
+  if (S._immLand) {
+    S._immLand = false;
+    if (AB && AB.setOrientation) { try { AB.setOrientation('unlock'); } catch (e) { } }
+  }
   const el = $('imm');
-  if (el) el.style.display = 'none';
+  if (el) { el.style.display = 'none'; el.classList.remove('land'); }
+}
+
+/** 沉浸歌词：点一下唤出/收起控制条（默认只显歌词，几秒后自动隐藏） */
+function toggleImmCtl() {
+  const el = $('imm'); if (!el) return;
+  const on = el.classList.toggle('ctl-on');
+  if (S._immCtlTimer) { clearTimeout(S._immCtlTimer); S._immCtlTimer = null; }
+  if (on) {
+    S._immCtlTimer = setTimeout(function () { const e = $('imm'); if (e) e.classList.remove('ctl-on'); S._immCtlTimer = null; }, 4500);
+  }
+}
+
+/** 沉浸歌词横屏开关：旋转到横屏、放大歌词、隐藏音量条 */
+function toggleImmLand() {
+  S._immLand = !S._immLand;
+  const el = $('imm');
+  if (!el) return;
+  el.classList.toggle('land', S._immLand);
+  if (AB && AB.setOrientation) {
+    try { AB.setOrientation(S._immLand ? 'land' : 'unlock'); } catch (e) { }
+  }
+  const b = $('immLandBtn');
+  if (b) b.textContent = S._immLand ? '⇅ 竖屏' : '⇄ 横屏';
+  immSync();
 }
 
 function immVolLive(v) {
@@ -823,6 +914,70 @@ function lyricOffShift(d) {
   if (el) el.textContent = lyricOffLabel();
   toast(v > 0 ? '歌词提前 ' + (v / 1000) + 's' : (v < 0 ? '歌词延后 ' + (-v / 1000) + 's' : '歌词无偏移'), 'ok');
   updateLyricProgress(nowPlaying().pos);
+}
+
+/* ---- v2.18：歌词字号调节 ---- */
+function lyricSizeSaved() {
+  try { const v = parseInt(localStorage.getItem('dlna_lyricsize') || '21', 10); return isNaN(v) ? 21 : v; }
+  catch (e) { return 21; }
+}
+function setLyricSize(px) {
+  px = Math.max(14, Math.min(42, parseInt(px, 10) || 21));
+  try { localStorage.setItem('dlna_lyricsize', String(px)); } catch (e) { }
+  const root = document.documentElement;
+  root.style.setProperty('--lyr-base', px + 'px');
+  root.style.setProperty('--lyr-on', Math.round(px * 1.33) + 'px');
+  const el = $('lyrSizeVal'); if (el) el.textContent = px + 'px';
+}
+/* ---- v2.18：主题配色切换 ---- */
+const THEMES = [
+  { key: 'cyan', label: '霓虹青' },
+  { key: 'amber', label: '琥珀金' },
+  { key: 'pink', label: '玫瑰粉' },
+  { key: 'green', label: '极光绿' },
+  { key: 'violet', label: '电光紫' }
+];
+function themeSaved() {
+  try { return localStorage.getItem('dlna_theme') || 'cyan'; }
+  catch (e) { return 'cyan'; }
+}
+function setTheme(key) {
+  key = key || 'cyan';
+  try { localStorage.setItem('dlna_theme', key); } catch (e) { }
+  applyTheme();
+  const t = THEMES.find(x => x.key === key);
+  toast('主题：' + (t ? t.label : key), 'ok');
+}
+function applyTheme() {
+  const key = themeSaved();
+  const html = document.documentElement;
+  THEMES.forEach(t => html.classList.remove('theme-' + t.key));
+  html.classList.add('theme-' + key);
+}
+function applyLyricSize() {
+  const px = lyricSizeSaved();
+  const root = document.documentElement;
+  root.style.setProperty('--lyr-base', px + 'px');
+  root.style.setProperty('--lyr-on', Math.round(px * 1.33) + 'px');
+}
+/* ---- v2.19：横屏歌词字号独立调节 ---- */
+function lyricSizeLandSaved() {
+  try { const v = parseInt(localStorage.getItem('dlna_lyricsize_land') || '24', 10); return isNaN(v) ? 24 : v; }
+  catch (e) { return 24; }
+}
+function setLandLyricSize(px) {
+  px = Math.max(14, Math.min(42, parseInt(px, 10) || 24));
+  try { localStorage.setItem('dlna_lyricsize_land', String(px)); } catch (e) { }
+  const root = document.documentElement;
+  root.style.setProperty('--lyr-land-base', px + 'px');
+  root.style.setProperty('--lyr-land-on', Math.round(px * 1.33) + 'px');
+  const el = $('lyrSizeLandVal'); if (el) el.textContent = px + 'px';
+}
+function applyLandLyricSize() {
+  const px = lyricSizeLandSaved();
+  const root = document.documentElement;
+  root.style.setProperty('--lyr-land-base', px + 'px');
+  root.style.setProperty('--lyr-land-on', Math.round(px * 1.33) + 'px');
 }
 
 /** 由播放进度驱动高亮；只在行变化时重绘，避免拖慢主循环 */
@@ -1500,6 +1655,7 @@ async function doDownloadInner(items) {
   try {
     resolved = await resolveOnline(items);
   } catch (e) { toast('解析失败：' + e.message, 'err'); return; }
+    (resolved || []).forEach(function (it) { saveDownloadedLyric(it); });  // 歌词随歌一起下
   const payload = resolved.map(t => ({
     provider: t.provider || S.online.provider, id: t.id, title: t.title, artist: t.artist,
     duration_sec: t.duration_sec || 0,
@@ -1512,6 +1668,17 @@ async function doDownloadInner(items) {
     toast('开始下载 ' + (r.queued != null ? r.queued : payload.length) + ' 首', 'ok');
   } catch (e) { toast('下载失败：' + e.message, 'err'); }
 }
+async function saveDownloadedLyric(it) {
+  try {
+    const PH = window.PluginHost;
+    if (!PH || !it.provider || !(it.id || it.oid)) return;
+    const r = await PH.lyric({ provider: it.provider, id: it.id || it.oid });
+    const lrc = (r && (r.lrc || r.rawLrc || r.lyric)) || '';
+    if (!lrc.trim()) return;
+    await apiPost('/api/lyric/save', { artist: it.artist || '未知歌手', title: it.title || '未知', lrc: lrc });
+  } catch (e) { }
+}
+
 async function dlStatus() {
   openSheet('下载状态', '<div class="empty"><span class="spin"></span> 读取中…</div>');
   try {
@@ -1545,9 +1712,8 @@ async function dlClear() {
 function modeChipsHTML(pl) {
   return `
     <div class="chip ${pl.shuffle ? 'on' : ''}" onclick="queueShuffle()">🔀 随机</div>
-    <div class="chip ${pl.repeat === 'all' ? 'on' : ''}" onclick="setRepeat('all')">🔁 列表循环</div>
-    <div class="chip ${pl.repeat === 'one' ? 'on' : ''}" onclick="setRepeat('one')">🔂 单曲循环</div>
-    <div class="chip ${(!pl.repeat || pl.repeat === 'off') ? 'on' : ''}" onclick="setRepeat('off')">➡ 顺序播放</div>`;
+    <div class="chip ${pl.repeat === 'all' ? 'on' : ''}" onclick="toggleRepeat('all')">🔁 列表循环</div>
+    <div class="chip ${pl.repeat === 'one' ? 'on' : ''}" onclick="toggleRepeat('one')">🔂 单曲循环</div>`;
 }
 
 /* ---- 边听边下载（v2.8） ---- */
@@ -1599,6 +1765,7 @@ function renderQueue() {
       <div class="act"><button class="iconbtn sm2 vi" title="移除" onclick="queueRemove(${i})">${I.x}</button></div>
     </div>`;
   }).join('');
+  renderQueueSaved();
   return box;
 }
 
@@ -1618,10 +1785,20 @@ async function addToQueue(tracks) {
     toast('已加入播放列表（' + tracks.length + ' 首）', 'ok');
     buzz();
     await tick(true);
+    saveCurQueueDebounced();
   } catch (e) { toast('加入失败：' + e.message, 'err'); }
 }
 async function jumpTo(i) {
-  if (S.out === 'phone' && S.phone.queue.length) { phonePlayAt(i); return; }
+  if (S.out === 'phone') {
+    // 本机播放：从播放列表（后端队列）取这一首本地播放；本机队列空时先镜像过去，保证顺序播放一致
+    if (!S.phone.queue.length) {
+      const q = (S.state && S.state.player && S.state.player.queue) || [];
+      S.phone.queue = q.slice();
+      S.phone.idx = -1;
+    }
+    phonePlayAt(i);
+    return;
+  }
   try {
     const r = await apiPost('/api/jump', { index: i });
     if (r.ok === false) throw new Error(r.result || '失败');
@@ -1632,7 +1809,7 @@ async function queueRemove(i) {
   if (S.out === 'phone' && S.phone.queue.length) {
     S.phone.queue.splice(i, 1);
     if (S.phone.idx >= S.phone.queue.length) S.phone.idx = S.phone.queue.length - 1;
-    renderQueue(); return;
+    renderQueue(); saveCurQueueDebounced(); return;
   }
   try { await apiPost('/api/queue', { action: 'remove', index: i }); await tick(true); }
   catch (e) { toast('移除失败：' + e.message, 'err'); }
@@ -1641,7 +1818,7 @@ async function queueClear() {
   try {
     await apiPost('/api/queue', { action: 'clear' });
     S.phone.queue = []; S.phone.idx = -1; stopPhone();
-    toast('已清空', 'ok'); await tick(true); renderQueue();
+    toast('已清空', 'ok'); await tick(true); renderQueue(); saveCurQueue();
   } catch (e) { toast('失败：' + e.message, 'err'); }
 }
 async function queueShuffle() {
@@ -1650,27 +1827,240 @@ async function queueShuffle() {
     const r = await apiPost('/api/mode', { shuffle: !pl.shuffle });
     toast(r.shuffle ? '随机播放：开' : '随机播放：关', 'ok');
     await tick(true);
+    saveCurQueueDebounced();
   } catch (e) { toast('失败：' + e.message, 'err'); }
+}
+
+/* =========================================================================
+   八-b、播放列表持久化 + 另存为 + 我的播放列表
+   ========================================================================= */
+const QKEY = 'dlna_queue_v1';
+const PKEY = 'dlna_playlists_v1';
+
+/* 取"当前正在显示的播放列表"（手机模式取 S.phone.queue，音响模式取后端队列） */
+function curQueueList() {
+  if (S.out === 'phone') return { list: S.phone.queue, idx: S.phone.idx, out: 'phone' };
+  const pl = (S.state && S.state.player) || {};
+  return { list: pl.queue || [], idx: (typeof pl.index === 'number' ? pl.index : -1), out: 'dlna' };
+}
+/* 把当前列表写进 localStorage，App 关掉再开就能恢复 */
+function saveCurQueue() {
+  try {
+    const c = curQueueList();
+    localStorage.setItem(QKEY, JSON.stringify({ out: c.out, idx: c.idx, items: c.list || [] }));
+  } catch (e) { }
+}
+let _saveQTimer = null;
+function saveCurQueueDebounced() {
+  if (_saveQTimer) clearTimeout(_saveQTimer);
+  _saveQTimer = setTimeout(saveCurQueue, 400);
+}
+/* 在线曲目地址会过期，恢复时尽量重新解析，避免"有列表播不了" */
+async function refreshQueueTracks(items) {
+  const on = (items || []).filter(t => t && t.source === 'online' && t.provider && (t.id || t.oid));
+  if (!on.length) return items;
+  try {
+    const resolved = await resolveOnline(on.map(t => ({
+      id: t.oid || t.id, provider: t.provider, title: t.title, artist: t.artist,
+      album: t.album, duration_sec: t.duration_sec || 0, source: 'online'
+    })));
+    const map = {};
+    (resolved || []).forEach(r => { map[trackKeyOf(r)] = r; });
+    return items.map(t => { const r = map[trackKeyOf(t)]; return r || t; });
+  } catch (e) { return items; }
+}
+/* 启动时从 localStorage 恢复上次的列表（含输出方式） */
+async function loadCurQueue() {
+  let raw;
+  try { raw = localStorage.getItem(QKEY); } catch (e) { return; }
+  if (!raw) return;
+  let data;
+  try { data = JSON.parse(raw); } catch (e) { return; }
+  const items = data.items || [];
+  if (!items.length) return;
+  S.out = data.out || S.out;
+  if (data.out === 'phone') {
+    S.phone.queue = items.slice();
+    S.phone.idx = (typeof data.idx === 'number') ? data.idx : -1;
+    if (S.phone.idx >= S.phone.queue.length) S.phone.idx = S.phone.queue.length - 1;
+    refreshQueueTracks(S.phone.queue).then(refreshed => {
+      if (refreshed && refreshed.length) { S.phone.queue = refreshed; renderQueue(); }
+    }).catch(() => { });
+  } else {
+    try {
+      const refreshed = await refreshQueueTracks(items.slice());
+      await apiPost('/api/queue', { action: 'clear' });
+      await apiPost('/api/queue', { action: 'add', tracks: refreshed }, 60000);
+      if (typeof data.idx === 'number' && data.idx >= 0) {
+        await apiPost('/api/jump', { index: data.idx }, 9000).catch(() => { });
+      }
+      S.phone.queue = refreshed.slice(); S.phone.idx = -1;
+    } catch (e) {
+      S.phone.queue = items.slice(); S.phone.idx = -1;
+    }
+  }
+}
+function stripTrack(t) {
+  if (!t) return null;
+  return {
+    title: t.title || '', artist: t.artist || '', album: t.album || '',
+    source: t.source || '', provider: t.provider || '', id: t.id || '', oid: t.oid || '',
+    url: t.url || t.stream_url || '', duration_sec: t.duration_sec || 0
+  };
+}
+function getPlaylists() {
+  try { return JSON.parse(localStorage.getItem(PKEY) || '[]') || []; } catch (e) { return []; }
+}
+function setPlaylists(arr) {
+  try { localStorage.setItem(PKEY, JSON.stringify((arr || []).slice(0, 50))); } catch (e) { }
+}
+function savePlaylistAs(name) {
+  name = (name || '').trim();
+  if (!name) { toast('名字不能为空', 'err'); return false; }
+  const c = curQueueList();
+  const items = (c.list || []).map(stripTrack).filter(Boolean);
+  if (!items.length) { toast('当前播放列表是空的，没法保存', 'err'); return false; }
+  const arr = getPlaylists();
+  const ex = arr.find(p => p.name === name);
+  const entry = { name: name, items: items, ts: Date.now() };
+  if (ex) Object.assign(ex, entry); else arr.unshift(entry);
+  setPlaylists(arr);
+  toast('已保存「' + name + '」(' + items.length + ' 首)', 'ok');
+  renderQueueSaved();
+  return true;
+}
+async function loadNamedPlaylist(i) {
+  const arr = getPlaylists();
+  const p = arr[i];
+  if (!p) return;
+  const items = (p.items || []).slice();
+  if (!items.length) { toast('该列表是空的', 'err'); return; }
+  const refreshed = await refreshQueueTracks(items);
+  if (S.out === 'phone') {
+    S.phone.queue = refreshed; S.phone.idx = -1;
+  } else {
+    try {
+      await apiPost('/api/queue', { action: 'clear' });
+      await apiPost('/api/queue', { action: 'add', tracks: refreshed }, 60000);
+    } catch (e) { }
+    S.phone.queue = refreshed; S.phone.idx = -1;
+  }
+  saveCurQueue();
+  switchTab('queue'); renderQueue();
+  if (S.out === 'phone') phonePlayAt(0);
+  else apiPost('/api/jump', { index: 0 }, 9000).catch(() => { });
+  toast('已载入「' + p.name + '」(' + refreshed.length + ' 首)', 'ok');
+}
+function deletePlaylist(i) {
+  const arr = getPlaylists();
+  if (i < 0 || i >= arr.length) return;
+  arr.splice(i, 1); setPlaylists(arr); renderQueueSaved();
+  toast('已删除', 'ok');
+}
+function renamePlaylistPrompt(i) {
+  const arr = getPlaylists(); const p = arr[i]; if (!p) return;
+  const html = '<div class="sec-title">重命名播放列表</div>'
+    + '<input class="inp" id="plRenameInput" value="' + esc(p.name) + '" style="width:100%;margin:8px 0;box-sizing:border-box"/>'
+    + '<div class="chips"><div class="chip on" onclick="doRenamePlaylist(' + i + ')">保存</div>'
+    + '<div class="chip" onclick="playlistsSheet()">取消</div></div>';
+  openSheet('重命名', html);
+}
+function doRenamePlaylist(i) {
+  const inp = $('plRenameInput'); const name = (inp ? inp.value : '').trim();
+  if (!name) { toast('名字不能为空', 'err'); return; }
+  const arr = getPlaylists(); if (arr[i]) { arr[i].name = name; setPlaylists(arr); }
+  playlistsSheet();
+}
+function playlistsSheet() {
+  const arr = getPlaylists();
+  let html = '<div class="sec-title">我的播放列表（' + arr.length + '）</div>';
+  if (!arr.length) {
+    html += '<div class="empty">还没有保存的播放列表。<br>在「播放列表」页点「💾 另存为」即可保存当前列表。</div>';
+  } else {
+    html += arr.map((p, i) =>
+      '<div class="item"><div class="txt" onclick="loadNamedPlaylist(' + i + ')">'
+      + '<div class="t1">' + esc(p.name) + '</div>'
+      + '<div class="t2">' + esc((p.items || []).length + ' 首') + '</div></div>'
+      + '<div class="act"><button class="iconbtn sm2" onclick="event.stopPropagation();renamePlaylistPrompt(' + i + ')" title="重命名">✎</button>'
+      + '<button class="iconbtn sm2 vi" onclick="event.stopPropagation();deletePlaylist(' + i + ')" title="删除">' + I.x + '</button></div></div>'
+    ).join('');
+    html += '<div class="sm muted" style="margin-top:8px">提示：这里保存的是应用内播放列表，关闭 App 也不会丢；点行即载入并播放。</div>';
+  }
+  openSheet('我的播放列表', html);
+}
+function renderQueueSaved() {
+  const el = $('queueSaved'); if (!el) return;
+  const arr = getPlaylists().slice(0, 3);
+  if (!arr.length) { el.style.display = 'none'; return; }
+  el.style.display = '';
+  el.innerHTML = '<span class="muted sm" style="margin-right:6px">快速：</span>'
+    + arr.map((p, i) => '<span class="chip" onclick="loadNamedPlaylist(' + i + ')" title="' + esc(p.name) + '">⚡ ' + esc(p.name) + '</span>').join('');
+}
+function savePlaylistSheet() {
+  const c = curQueueList();
+  if (!(c.list || []).length) { toast('当前播放列表是空的', 'err'); return; }
+  const html = '<div class="sec-title">另存为播放列表</div>'
+    + '<div class="sm muted">将把当前 ' + (c.list.length) + ' 首保存成一个可随时调用的播放列表。</div>'
+    + '<input class="inp" id="plSaveInput" placeholder="给播放列表起个名字" style="width:100%;margin:8px 0;box-sizing:border-box"/>'
+    + '<div class="chips"><div class="chip on" onclick="doSavePlaylist()">保存</div>'
+    + '<div class="chip" onclick="closeSheet()">取消</div></div>';
+  openSheet('另存为', html);
+  setTimeout(() => { const i = $('plSaveInput'); if (i) i.focus(); }, 50);
+}
+function doSavePlaylist() {
+  const inp = $('plSaveInput'); const name = (inp ? inp.value : '').trim();
+  if (!name) { toast('请先输入名字', 'err'); return; }
+  if (savePlaylistAs(name)) closeSheet();
+}
+/* 把本地曲库列表导出成一个 .m3u 文件（落盘到应用私有播放列表目录） */
+async function exportLibList() {
+  const items = (S._libItems || []).filter(t => t.type !== 'container');
+  if (!items.length) { toast('曲库列表是空的', 'err'); return; }
+  let m3u = '#EXTM3U\n';
+  items.forEach(t => {
+    const dur = Math.round(Number(t.duration_sec) || 0);
+    const artist = t.artist || '', title = t.title || '未知';
+    m3u += '#EXTINF:' + dur + ',' + artist + ' - ' + title + '\n';
+    if (t.id) m3u += BASE + '/media?id=' + encodeURIComponent(t.id) + '\n';
+    else if (t.url || t.stream_url) m3u += (t.url || t.stream_url) + '\n';
+    else m3u += '# (无可用地址)\n';
+  });
+  try {
+    const name = '库列表_' + new Date().toISOString().slice(0, 10);
+    const r = await apiPost('/api/export/playlist', { name: name, content: m3u }, 30000);
+    if (r && r.ok) toast('已导出到：' + (r.file || '播放列表文件'), 'ok');
+    else toast('导出失败：' + ((r && r.msg) || '未知'), 'err');
+  } catch (e) { toast('导出失败：' + e.message, 'err'); }
 }
 
 /* =========================================================================
    九、播放
    ========================================================================= */
 async function playOne(kind, i, forcePhone) {
-  let items = getItems(kind);
+  const items = getItems(kind);
   const t = items[i];
   if (!t) return;
   buzz();
+  // 只取「被点中的那一首」，不再把整页搜索结果都塞进播放列表
+  let track = t;
   if (kind === 'online') {
     try {
-      items = await resolveOnline(items);
-      S.online.items = items;
+      const resolved = await resolveOnline([{
+        id: t.oid || t.id, provider: t.provider || S.online.provider,
+        title: t.title, artist: t.artist, album: t.album,
+        duration_sec: t.duration_sec || 0, source: 'online'
+      }]);
+      if (!resolved.length) throw new Error('无解析结果');
+      track = resolved[0];
+      // 原地更新显示用对象，保持列表顺序不变
+      S.online.items[i] = Object.assign({}, t, track);
     } catch (e) { toast('解析播放地址失败：' + e.message, 'err'); return; }
   }
   if (forcePhone || S.out === 'phone') {
     setOut('phone', true);
-    S.phone.queue = items.slice();
-    phonePlayAt(i);
+    S.phone.queue.push(track);                 // 追加，不覆盖原有列表
+    phonePlayAt(S.phone.queue.length - 1);
+    pushMediaState();
     return;
   }
   const udns = selectedUdns();
@@ -1678,14 +2068,18 @@ async function playOne(kind, i, forcePhone) {
     // 没有可用音响（局域网里没发现 DLNA 设备或未选择）→ 自动回退手机本机播放
     toast('未发现可用音响，已改用手机本机播放');
     setOut('phone', true);
-    S.phone.queue = items.slice();
-    phonePlayAt(i);
+    S.phone.queue.push(track);
+    phonePlayAt(S.phone.queue.length - 1);
+    pushMediaState();
     return;
   }
   toast('正在推送到音响…');
   try {
-    const r = await apiPost('/api/play', { tracks: items, index: i, udns: udns }, 40000);
-    if (r.ok === false) throw new Error(r.result || '播放失败');
+    // 仅把这一首追加进播放列表（保留原有列表），再跳到它开始播放
+    const q = (S.state && S.state.player && Array.isArray(S.state.player.queue)) ? S.state.player.queue : [];
+    const idx = q.length;
+    await apiPost('/api/queue', { action: 'add', tracks: [track] }, 40000);
+    await apiPost('/api/jump', { index: idx }, 9000);
     toast('已开始播放', 'ok');
     await tick(true);
   } catch (e) { toast('播放失败：' + e.message, 'err'); }
@@ -1693,6 +2087,22 @@ async function playOne(kind, i, forcePhone) {
 async function addOne(kind, i) {
   const t = getItems(kind)[i];
   if (t) await addToQueue([t]);
+}
+async function addLibAll() {
+  const its = (S._libItems || []).filter(t => t.type !== 'container');
+  if (!its.length) { toast('没有可加入的曲目', 'err'); return; }
+  await addToQueue(its.slice());
+}
+function libActionsUpdate() {
+  const bar = $('libActions');
+  if (!bar) return;
+  const n = (S._libItems || []).filter(t => t.type !== 'container').length;
+  if (n) {
+    bar.style.display = '';
+    const c = $('libCount'); if (c) c.textContent = '当前 ' + n + ' 首';
+  } else {
+    bar.style.display = 'none';
+  }
 }
 
 /* --- 手机本机播放 --- */
@@ -1708,6 +2118,15 @@ function setOut(mode, quiet) {
   if (!quiet) toast(mode === 'phone' ? '输出：手机本机' : '输出：音响', 'ok');
   updatePlayBtn();
   renderMini();
+  saveCurQueue();
+}
+function localPlayUrl(u) {
+  if (!u) return u;
+  const m = /^https?:\/\/[^/]+(\/.*)$/.exec(u);
+  if (!m) return u;
+  // 手机本机播放走回环地址，避免部分 ROM 自连局域网 IP 不通；服务绑定 0.0.0.0，回环一定可达
+  const port = location.port || '8765';
+  return 'http://127.0.0.1:' + port + m[1];
 }
 function phonePlayAt(i) {
   const t = S.phone.queue[i];
@@ -1719,24 +2138,28 @@ function phonePlayAt(i) {
     url = BASE + '/media?id=' + encodeURIComponent(t.id);
   }
   if (!url) { toast('该曲目没有可用的播放地址', 'err'); return; }
-  audio.src = url;
+  audio.src = localPlayUrl(url);
   const p = audio.play();
   if (p && p.catch) p.catch(e => toast('本机播放失败：' + e.message, 'err'));
   renderMini(); renderQueue();
+  saveCurQueueDebounced();
 }
 function phoneNext() {
   if (S.phone.idx + 1 < S.phone.queue.length) phonePlayAt(S.phone.idx + 1);
   else { toast('播放列表已播完'); }
+  pushMediaState();
 }
 function phonePrev() {
   if (S.phone.idx > 0) phonePlayAt(S.phone.idx - 1);
+  pushMediaState();
 }
-function stopPhone() { try { audio.pause(); } catch (e) { } }
+function stopPhone() { try { audio.pause(); } catch (e) { } pushMediaState(); }
 function phoneToggle() {
   if (!S.phone.queue.length) { toast('先选一首歌'); return; }
   if (S.phone.idx < 0) { phonePlayAt(0); return; }
   if (audio.paused) { const p = audio.play(); if (p && p.catch) p.catch(() => { }); }
   else audio.pause();
+  pushMediaState();
 }
 audio.addEventListener('ended', function () {
   const pl = (S.state && S.state.player) || {};
@@ -1763,6 +2186,7 @@ async function ctl(action) {
   try {
     const r = await apiPost('/api/control', { action: action });
     if (r.ok === false) throw new Error(r.result || '失败');
+    pushMediaState();
     setTimeout(() => tick(true), 400);
   } catch (e) { toast('操作失败：' + e.message, 'err'); }
 }
@@ -1828,6 +2252,17 @@ function updatePlayBtn() {
   const n = nowPlaying();
   const b = $('miniPlay');
   b.textContent = n.playing ? '⏸' : '▶';
+}
+
+/* 把当前曲目 + 播放状态推给原生层，用于锁屏 / 通知栏媒体控制 */
+function pushMediaState() {
+  if (!(AB && AB.updateMedia)) return;
+  const n = nowPlaying();
+  const key = (n.t ? ((n.t.title || '') + '|' + (n.t.artist || '')) : '') + '|' + (n.playing ? 1 : 0);
+  if (S._lastMediaKey === key) return;     // 没变化就不刷通知，避免 300ms 抖动
+  S._lastMediaKey = key;
+  try { AB.updateMedia(n.t ? (n.t.title || '') : '', n.t ? (n.t.artist || '') : '', !!n.playing); }
+  catch (e) { }
 }
 
 /* --- 播放器大面板 --- */
@@ -2016,6 +2451,12 @@ async function volAll(v) {
     toast(m.indexOf('音量') >= 0 ? m : ('音量设置失败：' + m), 'err');
   }
 }
+/* 列表循环 / 单曲循环：再点已激活的芯片即关闭（回到顺序播放）；关闭循环即顺序播放 */
+async function toggleRepeat(mode) {
+  const pl = (S.state && S.state.player) || {};
+  await setRepeat(pl.repeat === mode ? 'off' : mode);
+}
+
 async function setRepeat(mode) {
   try { await apiPost('/api/mode', { repeat: mode }); toast('已切换播放模式', 'ok'); await tick(true); }
   catch (e) { toast('失败：' + e.message, 'err'); }
@@ -2047,6 +2488,25 @@ function settingsSheet() {
       <div class="chip ${(window.I18N && I18N.lang) === 'en' ? 'on' : ''}" onclick="I18N.set('en')">English</div>
     </div>
 
+    <div class="sec-title">歌词字号（竖屏）</div>
+    <div style="display:flex;align-items:center;gap:12px;padding:0 2px">
+      <input type="range" min="14" max="42" value="${lyricSizeSaved()}" style="flex:1"
+             oninput="setLyricSize(this.value)" onchange="setLyricSize(this.value)">
+      <span id="lyrSizeVal" class="sm" style="min-width:48px;text-align:right;color:var(--cy)">${lyricSizeSaved()}px</span>
+    </div>
+
+    <div class="sec-title">歌词字号（横屏）</div>
+    <div style="display:flex;align-items:center;gap:12px;padding:0 2px">
+      <input type="range" min="14" max="42" value="${lyricSizeLandSaved()}" style="flex:1"
+             oninput="setLandLyricSize(this.value)" onchange="setLandLyricSize(this.value)">
+      <span id="lyrSizeLandVal" class="sm" style="min-width:48px;text-align:right;color:var(--cy)">${lyricSizeLandSaved()}px</span>
+    </div>
+
+    <div class="sec-title">主题配色</div>
+    <div class="chips">
+      ${THEMES.map(t => '<div class="chip ' + (themeSaved() === t.key ? 'on' : '') + '" onclick="setTheme(\'' + t.key + '\')">' + esc(t.label) + '</div>').join('')}
+    </div>
+
     <div class="sec-title">关于</div>
     <div class="sm muted">
       SyncDlnaPlay · 独立运行版${AB && AB.getVersion ? ' v' + esc(AB.getVersion()) : ''}<br>
@@ -2060,6 +2520,8 @@ function settingsSheet() {
     </div>
   `);
 }
+
+
 /* ---- 使用说明（详细教程，v2.8） ---- */
 function helpSheet() {
   const H = [];
@@ -2102,7 +2564,9 @@ function helpSheet() {
 
   sec('📋 播放列表',
     li('点歌曲行任意位置即跳播；右侧 × 可从列表移除；「清空」一键清空。')
-    + li('<strong>播放模式（v2.8 起在这里设置）：</strong>🔀 随机、🔁 列表循环、🔂 单曲循环、➡ 顺序播放。'));
+    + li('<strong>播放模式（v2.8 起在这里设置）：</strong>🔀 随机、🔁 列表循环、🔂 单曲循环。关闭循环即按列表顺序播放。')
+    + li('<strong>自动保存：</strong>播放列表会随 App 一起保存，下次打开自动恢复（含手机/音响两种输出）。')
+    + li('<strong>另存为 / 我的播放列表：</strong>「💾 另存为」把当前列表存成命名列表；「📂 我的播放列表」可载入/重命名/删除，列表顶部还有前 3 个的快速切换。'));
 
   sec('📥 下载的文件在哪',
     p('默认保存在手机公共目录 <strong>Music/音响管家/</strong>，按「歌手/歌手 - 歌名」命名，任何文件管理器都能看到。下载状态可在「设置 → 下载状态」查看进度与失败原因。'));
@@ -2138,6 +2602,7 @@ window.__onBack = function () {
    ========================================================================= */
 (function init() {
   loadBase();
+  applyTheme(); applyLyricSize(); applyLandLyricSize();
 
   $('btnRetry').addEventListener('click', () => { setMsg(''); startEngine(); });
 
@@ -2160,6 +2625,7 @@ window.__onBack = function () {
 
   $('btnLibMore').addEventListener('click', libMore);
   $('btnLibSearch').addEventListener('click', libSearch);
+  $('btnLibAll').addEventListener('click', addLibAll);
   document.querySelectorAll('#libSource .segbtn').forEach(b => {
     b.addEventListener('click', () => {
       document.querySelectorAll('#libSource .segbtn').forEach(x => x.classList.remove('on'));
@@ -2182,6 +2648,9 @@ window.__onBack = function () {
   $('onlineLimit').addEventListener('change', () => { if (S.online.q) doOnlineSearch(1); });
 
   $('btnQueueClear').addEventListener('click', queueClear);
+  $('btnQueueSave').addEventListener('click', savePlaylistSheet);
+  $('btnQueueLists').addEventListener('click', playlistsSheet);
+  $('btnLibExport').addEventListener('click', exportLibList);
 
   $('miniVol').addEventListener('click', volumeSheet);
   $('miniPlay').addEventListener('click', () => ctl(nowPlaying().playing ? 'pause' : 'play'));
@@ -2199,7 +2668,10 @@ window.__onBack = function () {
 
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && BASE) tick(true);
+    else saveCurQueue();
   });
+  window.addEventListener('pagehide', saveCurQueue);
+  window.addEventListener('beforeunload', saveCurQueue);
 
   // 启动本机内置服务（它在 App 进程里，不存在"连不上服务器"）
   startEngine().catch(e => setMsg('启动异常：' + ((e && e.message) || e), true));

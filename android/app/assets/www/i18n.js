@@ -265,9 +265,8 @@
     "🔀 随机": "🔀 Shuffle",
     "🔁 列表循环": "🔁 Repeat all",
     "🔂 单曲循环": "🔂 Repeat one",
-    "➡ 顺序播放": "➡ In order",
-    "🔀 随机、🔁 列表循环、🔂 单曲循环、➡ 顺序播放。":
-      "🔀 Shuffle, 🔁 Repeat all, 🔂 Repeat one, ➡ In order.",
+    "🔀 随机、🔁 列表循环、🔂 单曲循环。关闭循环即按列表顺序播放。":
+      "🔀 Shuffle, 🔁 Repeat all, 🔂 Repeat one. Turning off loop plays in list order.",
     "在「曲库」或「在线」里点 ＋ 加歌": "Tap ＋ in Library or Online to add songs",
     "在「播放列表」点歌即播。声音从哪出由「正在播放」页的「输出方式」决定：音响 or 手机。":
       "Tap a song in the queue to play it. Where the sound comes out is set by Output on the Now Playing page: speaker or phone.",
@@ -289,7 +288,6 @@
     "这首歌没有歌词？": "No lyrics for this song?",
     "这首歌没有歌词": "No lyrics for this song",
     "单曲循环": "Repeat one",
-    "顺序播放": "In order",
     "列表循环": "Repeat all",
     "✕ 退出": "✕ Exit",
     "先播放一首歌": "Play a song first",

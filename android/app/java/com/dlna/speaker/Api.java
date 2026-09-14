@@ -408,6 +408,9 @@ public final class Api implements HttpSrv.Handler {
         }
 
         // 歌词
+        if (path.equals("/api/lyric/save")) { lyricSave(req, res); return; }
+        if (path.equals("/api/lyric/byname")) { lyricByName(req, res); return; }
+        if (path.equals("/api/export/playlist")) { exportPlaylist(req, res); return; }
         if (path.equals("/api/lyric")) {
             lyricApi(req, res);
             return;
@@ -447,6 +450,12 @@ public final class Api implements HttpSrv.Handler {
             Map<String, Object> b = req.json();
             boolean ok = player.control(Json.s(b, "action"), stringList(b.get("udns")));
             res.json(Json.map("ok", ok, "result", ok ? "ok" : player.getLastError()));
+            return;
+        }
+        if (path.equals("/api/setSync")) {
+            Map<String, Object> b = req.json();
+            player.setSyncLead(Json.i(b, "lead_ms", 8000));
+            res.json(Json.map("ok", true, "lead_ms", player.getSyncLead()));
             return;
         }
         if (path.equals("/api/volume")) {
@@ -928,6 +937,64 @@ public final class Api implements HttpSrv.Handler {
             lrc = Lyrics.find(this, id);
         } catch (Throwable ignore) { }
         res.json(Json.map("ok", true, "lrc", lrc == null ? "" : lrc));
+    }
+
+    private File lyricStoreFile(String artist, String title) {
+        String name = Util.sanitizeName((artist == null ? "" : artist) + " - " + (title == null ? "" : title), "track") + ".lrc";
+        File dir = storage.lyricsDir();
+        if (!dir.exists()) dir.mkdirs();
+        return new File(dir, name);
+    }
+
+    /** 把歌词落盘到应用私有的歌词库（与音频落盘目录解耦，避免 .lrc 进媒体库成幽灵曲目） */
+    private void lyricSave(HttpSrv.Req req, HttpSrv.Res res) {
+        Map<String, Object> b = req.json();
+        String artist = Json.s(b, "artist"), title = Json.s(b, "title"), lrc = Json.s(b, "lrc");
+        if (lrc == null || lrc.trim().isEmpty()) { res.json(Json.map("ok", false, "msg", "空歌词")); return; }
+        try {
+            File f = lyricStoreFile(artist, title);
+            File parent = f.getParentFile();
+            if (!parent.exists() && !parent.mkdirs()) { res.json(Json.map("ok", false, "msg", "无法创建目录")); return; }
+            java.io.OutputStream os = new java.io.FileOutputStream(f);
+            java.io.Writer w = new java.io.OutputStreamWriter(os, "UTF-8");
+            w.write(lrc); w.flush(); w.close();
+            res.json(Json.map("ok", true, "file", f.getAbsolutePath()));
+        } catch (Throwable e) {
+            res.json(Json.map("ok", false, "msg", String.valueOf(e.getMessage())));
+        }
+    }
+
+    /** 从标题歌词库读歌词（下载/本地歌在线找词后落盘，按 歌手 - 歌名 检索） */
+    private void lyricByName(HttpSrv.Req req, HttpSrv.Res res) {
+        String artist = req.param("artist", ""), title = req.param("title", "");
+        try {
+            File f = lyricStoreFile(artist, title);
+            if (!f.isFile()) { res.json(Json.map("ok", true, "lrc", "")); return; }
+            java.io.InputStream in = new java.io.FileInputStream(f);
+            String lrc = Lyrics.readText(in);
+            res.json(Json.map("ok", true, "lrc", lrc == null ? "" : lrc));
+        } catch (Throwable ignore) {
+            res.json(Json.map("ok", true, "lrc", ""));
+        }
+    }
+
+    /** 把前端生成的播放列表（.m3u 文本）落盘到应用私有播放列表目录 */
+    private void exportPlaylist(HttpSrv.Req req, HttpSrv.Res res) {
+        Map<String, Object> b = req.json();
+        String name = Util.sanitizeName(Json.s(b, "name", "playlist"), "playlist");
+        String content = Json.s(b, "content", "");
+        if (content == null || content.isEmpty()) { res.json(Json.map("ok", false, "msg", "空内容")); return; }
+        try {
+            File dir = storage.playlistDir();
+            if (!dir.exists() && !dir.mkdirs()) { res.json(Json.map("ok", false, "msg", "无法创建目录")); return; }
+            File f = new File(dir, name + ".m3u");
+            java.io.OutputStream os = new java.io.FileOutputStream(f);
+            java.io.Writer w = new java.io.OutputStreamWriter(os, "UTF-8");
+            w.write(content); w.flush(); w.close();
+            res.json(Json.map("ok", true, "file", f.getAbsolutePath()));
+        } catch (Throwable e) {
+            res.json(Json.map("ok", false, "msg", String.valueOf(e.getMessage())));
+        }
     }
 
     Map<String, Object> trackById(String id) { return library.byId(id); }

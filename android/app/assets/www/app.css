@@ -49,6 +49,10 @@
   --safe-b:env(safe-area-inset-bottom,0px);
   --safe-t:env(safe-area-inset-top,0px);
   --mono:ui-monospace,"SF Mono","Roboto Mono",Menlo,Consolas,"Liberation Mono","Courier New",monospace;
+  --lyr-base:21px;
+  --lyr-on:28px;
+  --lyr-land-base:24px;
+  --lyr-land-on:32px;
 }
 
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -644,10 +648,10 @@ input,textarea,.lrc-box,.lrc-line{-webkit-user-select:text;user-select:text;-web
 .imm-lrc{flex:1;overflow-y:auto;margin:12px 0;
   -webkit-mask-image:linear-gradient(180deg,transparent 0,#000 10%,#000 90%,transparent 100%);
   mask-image:linear-gradient(180deg,transparent 0,#000 10%,#000 90%,transparent 100%)}
-.imm-lrc .lrc-line{font-size:21px;line-height:1.55;padding:10px 4px;opacity:.36;
+.imm-lrc .lrc-line{font-size:var(--lyr-base);line-height:1.55;padding:10px 6px;opacity:.45;
   transition:opacity .25s,font-size .25s,color .25s}
-.imm-lrc .lrc-line.on{font-size:26px;opacity:1;color:var(--cy);
-  text-shadow:0 0 20px rgba(34,230,255,.55)}
+.imm-lrc .lrc-line.on{font-size:var(--lyr-on);opacity:1;color:var(--cy);
+  text-shadow:0 0 18px rgba(34,230,255,.5)}
 .imm-ctl{border-top:1px solid rgba(34,230,255,.18);padding-top:12px;
   display:flex;flex-direction:column;gap:12px}
 .imm-btns{display:flex;justify-content:center;gap:26px}
@@ -655,6 +659,33 @@ input,textarea,.lrc-box,.lrc-line{-webkit-user-select:text;user-select:text;-web
 .imm-vol{display:flex;align-items:center;gap:10px}
 .imm-vol input[type=range]{flex:1}
 
+/* ---- v2.16：沉浸歌词极简 —— 默认只显歌词，点按唤出控制条，数秒后自动隐藏 ---- */
+.imm-head, .imm-ctl{opacity:0;pointer-events:none;transform:translateY(6px);
+  transition:opacity .28s ease, transform .28s ease}
+.imm.ctl-on .imm-head, .imm.ctl-on .imm-ctl{opacity:1;pointer-events:auto;transform:none}
+
+/* ---- v2.18：沉浸歌词横屏 —— 歌词占满全屏、控制条在右侧 ---- */
+.imm.land{padding:0 82px 0 18px}
+.imm.land .imm-head{position:absolute;left:18px;top:12px;right:100px;padding:0;margin:0;z-index:2}
+.imm.land .imm-lrc{flex:1;margin:0;-webkit-mask-image:none;mask-image:none}
+.imm.land .imm-lrc .lrc-line{font-size:var(--lyr-land-base);line-height:1.5;padding:12px 8px}
+.imm.land .imm-lrc .lrc-line.on{font-size:var(--lyr-land-on)}
+.imm.land .imm-vol{display:none}
+.imm.land .imm-ctl{position:absolute;right:0;top:0;bottom:0;width:72px;gap:18px;padding:12px 8px;border-top:none;border-left:1px solid rgba(34,230,255,.16);background:rgba(0,0,0,.32);flex-direction:column;justify-content:center}
+.imm.land .imm-btns{flex-direction:column;gap:18px}
+.imm.land .imm-btns .btn{min-width:auto;width:52px;height:52px;font-size:22px;border-radius:50%}
+.imm.land.ctl-on .imm-head{opacity:1;pointer-events:auto}
+
 /* ---- v2.12：英文界面底栏文字更长，缩小字号避免换行裁切 ---- */
 html[lang="en"] .navbtn{font-size:9px;letter-spacing:.03em;line-height:1.2;gap:2px}
 html[lang="en"] .navbtn i{font-size:18px}
+
+/* ================= v2.18 主题配色 ================= */
+html.theme-amber{--cy:#ffb347;--cy-d:#cc8a2f;--mg:#ff6b6b;--vi:#ffd93d}
+html.theme-pink{--cy:#ff70a6;--cy-d:#d94a82;--mg:#ff006e;--vi:#c77dff}
+html.theme-green{--cy:#39ff14;--cy-d:#28b30e;--mg:#00f5d4;--vi:#9b5de5}
+html.theme-violet{--cy:#c77dff;--cy-d:#a050e0;--mg:#ff006e;--vi:#22e6ff}
+html.theme-amber body{background:linear-gradient(180deg,#0f0a04 0%,#1a1208 55%,#0f0a04 100%)}
+html.theme-pink body{background:linear-gradient(180deg,#0f0408 0%,#1a0812 55%,#0f0408 100%)}
+html.theme-green body{background:linear-gradient(180deg,#040f06 0%,#081a0d 55%,#040f06 100%)}
+html.theme-violet body{background:linear-gradient(180deg,#07040f 0%,#12081a 55%,#07040f 100%)}

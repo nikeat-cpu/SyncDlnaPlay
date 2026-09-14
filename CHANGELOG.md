@@ -3,6 +3,19 @@
 All notable changes to SyncDlnaPlay are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions are `X.Y` (Android standalone) unless noted.
 
+## [2.21] — 2026-09-14
+
+### Changed
+- **Simplified the playback-mode toolbar**: removed the redundant "In order" (顺序播放) chip — turning shuffle off already means sequential playback. The "Repeat all" and "Repeat one" chips are now toggleable: tapping an already-active loop chip turns the loop off and returns to sequential playback.
+
+## [2.20] — 2026-09-14
+
+### Added
+- **Persistent play queue**: the current queue (tracks, play mode and position) is saved automatically and restored on next launch. Online tracks whose stream URLs have expired are re-resolved on restore, so the queue is always playable.
+- **Save queue as a named playlist**: "💾 Save as" stores the current queue under a name (up to 50 playlists).
+- **Quick switch to your 3 most recent playlists**: the Queue page shows the last 3 saved playlists as one-tap chips; "📂 My lists" opens a manager to load / rename / delete.
+- **Export library list**: the Local Library page can export the current list as an `.m3u` file, saved to the app-private `playlists/` folder so it never appears as a phantom track in the media scanner.
+
 ## [2.12] — 2026-09-11
 
 ### Added

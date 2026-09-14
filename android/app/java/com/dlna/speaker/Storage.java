@@ -61,6 +61,12 @@ public interface Storage {
     /** 默认（非自定义）目录的 File 形式，用于本地扫描 */
     File defaultDir();
 
+    /** 歌词独立存储目录（纯文件、应用私有，避免把 .lrc 写进音频库造成幽灵曲目） */
+    File lyricsDir();
+
+    /** 导出的播放列表文件目录（应用私有，落地为 .m3u） */
+    File playlistDir();
+
     /* ================================================================== */
 
     /**
@@ -121,5 +127,8 @@ public interface Storage {
         @Override public void setCustom(String uri, String name) { this.custom = uri == null ? "" : uri; }
         @Override public void clearCustom() { this.custom = ""; }
         @Override public File defaultDir() { return root; }
+
+    @Override public File lyricsDir() { return new File(root, "lyrics"); }
+    @Override public File playlistDir() { return new File(root, "playlists"); }
     }
 }

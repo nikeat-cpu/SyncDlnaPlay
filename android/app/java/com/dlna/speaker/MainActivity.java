@@ -2,7 +2,11 @@ package com.dlna.speaker;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.net.wifi.WifiManager;
@@ -74,6 +78,14 @@ public class MainActivity extends Activity {
 
         requestPermissionsIfNeeded();
         startKeepAlive();
+        // 媒体控制统一入口：锁屏/通知/耳机按键由 KeepAliveService 收下后转回这里，
+        // 直接驱动前端 ctl()；Activity 已销毁时由服务回退到本机 HTTP 控制。
+        KeepAliveService.setControlHandler(new KeepAliveService.ControlHandler() {
+            @Override public void control(String a) {
+                if (web != null) runJs("ctl('" + a + "')");
+                else KeepAliveService.httpControl(a);
+            }
+        });
     }
 
     /** 建 WebView 并挂进 root。渲染进程崩溃后也走这里重建，所以单独抽出来。 */
@@ -360,6 +372,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        KeepAliveService.setControlHandler(null);
         if (server != null) server.stop();
         if (mcLock != null) {
             try { if (mcLock.isHeld()) mcLock.release(); } catch (Exception ignore) { }
@@ -420,7 +433,7 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public String getVersion() {
-            return "2.12-standalone";
+            return "2.21-standalone";
         }
 
         /** 最近的崩溃记录（新的在前），供界面「运行日志」展示 */
@@ -538,6 +551,28 @@ public class MainActivity extends Activity {
         public void startKeepAlive() {
             runOnUiThread(new Runnable() {
                 @Override public void run() { MainActivity.this.startKeepAlive(); }
+            });
+        }
+
+        /** 前端把当前曲目与播放状态推过来，刷新锁屏/通知栏媒体控制 */
+        @JavascriptInterface
+        public void updateMedia(String title, String artist, boolean playing) {
+            try {
+                KeepAliveService.updateMedia(title, artist, playing);
+            } catch (Throwable ignore) { }
+        }
+
+        /** 控制屏幕方向：'land'=锁定横屏，'port'=锁定竖屏，'unlock'=跟随传感器 */
+        @JavascriptInterface
+        public void setOrientation(String mode) {
+            final int ori;
+            if ("land".equals(mode)) ori = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE;
+            else if ("port".equals(mode)) ori = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;
+            else ori = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
+            runOnUiThread(new Runnable() {
+                @Override public void run() {
+                    try { MainActivity.this.setRequestedOrientation(ori); } catch (Throwable ignore) { }
+                }
             });
         }
 

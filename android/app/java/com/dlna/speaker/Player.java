@@ -5,6 +5,10 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 播放器：队列 + 播放目标 + 传输控制 + 自动续播调度器
@@ -48,6 +52,10 @@ public final class Player {
     private volatile int lastPosSec = -1;
     private volatile String lastError = "";
     private volatile long lastAdvanceAt = 0;
+
+    /** 多音响同步播放的「共同开始延时」（毫秒）。点播放后先并行推送，等这么久再一起播，
+     *  抵消各音响 WiFi 推送速度差造成的先后。0 = 不等，立即播。可由 /api/setSync 调整。 */
+    private volatile int syncLeadMs = 8000;
 
     public Player(DeviceManager dm) {
         this.dm = dm;
@@ -96,6 +104,7 @@ public final class Player {
             m.put("auto_advance", autoAdvance);
             m.put("repeat", repeat);
             m.put("shuffle", shuffle);
+            m.put("sync_lead_ms", syncLeadMs);
             Map<String, Object> cur = (index >= 0 && index < queue.size()) ? queue.get(index) : null;
             m.put("current", cur == null ? null : publicTrack(cur));
             m.put("output", targets.isEmpty() ? "phone" : "dlna");
@@ -143,6 +152,9 @@ public final class Player {
     public Map<String, Integer> getDelays() {
         synchronized (lock) { return new LinkedHashMap<String, Integer>(delays); }
     }
+
+    public int getSyncLead() { return syncLeadMs; }
+    public void setSyncLead(int ms) { syncLeadMs = Math.max(0, Math.min(20000, ms)); }
 
     /* ------------------------------------------------------------ 模式 */
 
@@ -264,26 +276,75 @@ public final class Player {
         if (tgs.isEmpty()) {
             return true;        // 本机播放：前端负责
         }
-        boolean anyOk = false;
-        String err = "";
+        // 收集在线渲染器
+        List<Dlna.Renderer> rs = new ArrayList<Dlna.Renderer>();
         for (String udn : tgs) {
             Dlna.Renderer r = dm.renderer(udn);
-            if (r == null) { err = "设备不在线: " + udn; continue; }
-            Integer d = delays.get(udn);
-            if (d != null && d > 0) {
-                try { Thread.sleep(d); } catch (InterruptedException ignore) { }
-            }
-            Dlna.SoapResult sr = r.setUri(url, Json.s(track, "title"),
-                    Dlna.secToTsec(Json.i(track, "duration_sec", 0)),
-                    Json.s(track, "artist"), Json.s(track, "album"), null, null, 8);
-            if (!sr.ok) { err = sr.error; continue; }
-            try { Thread.sleep(120); } catch (InterruptedException ignore) { }
-            Dlna.SoapResult pr = r.play();
-            if (!pr.ok) { err = pr.error; continue; }
-            anyOk = true;
+            if (r != null) rs.add(r);
         }
+        if (rs.isEmpty()) {
+            lastError = "没有可用的音响（可能都离线了）";
+            playing = false;
+            return false;
+        }
+        final String title = Json.s(track, "title");
+        final String artist = Json.s(track, "artist");
+        final String album = Json.s(track, "album");
+        final String dur = Dlna.secToTsec(Json.i(track, "duration_sec", 0));
+
+        // 阶段一：并行给所有音响 SetAVTransportURI（推流地址），互不阻塞，
+        //   这样 WiFi 弱的音响不会因为串行排队而更晚才开始准备。
+        long t0 = System.currentTimeMillis();
+        ExecutorService setEx = Executors.newFixedThreadPool(Math.min(8, rs.size()));
+        List<Future<Boolean>> setFuts = new ArrayList<Future<Boolean>>();
+        for (final Dlna.Renderer r : rs) {
+            setFuts.add(setEx.submit(new java.util.concurrent.Callable<Boolean>() {
+                @Override public Boolean call() {
+                    Dlna.SoapResult sr = r.setUri(url, title, dur, artist, album, null, null, 8);
+                    return Boolean.valueOf(sr.ok);
+                }
+            }));
+        }
+        boolean anySet = false;
+        for (Future<Boolean> f : setFuts) {
+            try { if (Boolean.TRUE.equals(f.get(10, TimeUnit.SECONDS))) anySet = true; } catch (Exception ignore) { }
+        }
+        setEx.shutdownNow();
+        if (!anySet) {
+            lastError = "推送到音响失败（SetAVTransportURI 全部失败）";
+            playing = false;
+            return false;
+        }
+
+        // 阶段二：等一个共同的「开始时间」再一起播放，抵消各音响推送速度差造成的先后。
+        //   多音响才需要较长缓冲；单音响直接小延迟，点完很快响。
+        long elapsed = System.currentTimeMillis() - t0;
+        long lead = (rs.size() > 1) ? syncLeadMs : Math.min(syncLeadMs, 600);
+        long remain = lead - elapsed;
+        if (remain > 0) {
+            try { Thread.sleep(remain); } catch (InterruptedException ignore) { }
+        }
+
+        // 阶段三：并行发 Play；每音响可叠加手动微调 delay（补偿个别音响偏快/偏慢）。
+        ExecutorService playEx = Executors.newFixedThreadPool(Math.min(8, rs.size()));
+        List<Future<Boolean>> playFuts = new ArrayList<Future<Boolean>>();
+        for (final Dlna.Renderer r : rs) {
+            final int off = delays.containsKey(r.udn) ? delays.get(r.udn) : 0;
+            playFuts.add(playEx.submit(new java.util.concurrent.Callable<Boolean>() {
+                @Override public Boolean call() {
+                    if (off > 0) { try { Thread.sleep(off); } catch (InterruptedException ignore) { } }
+                    Dlna.SoapResult pr = r.play();
+                    return Boolean.valueOf(pr.ok);
+                }
+            }));
+        }
+        boolean anyOk = false;
+        for (Future<Boolean> f : playFuts) {
+            try { if (Boolean.TRUE.equals(f.get(10, TimeUnit.SECONDS))) anyOk = true; } catch (Exception ignore) { }
+        }
+        playEx.shutdownNow();
         if (!anyOk) {
-            lastError = err.isEmpty() ? "推送到音响失败" : err;
+            lastError = "播放指令发送失败";
             playing = false;
         }
         return anyOk;

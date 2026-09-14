@@ -105,6 +105,16 @@ public final class AndroidStorage implements Storage {
         return new File(base, subDir());
     }
 
+    @Override public File lyricsDir() {
+        // 应用私有目录：永远可写、无需权限，与音频落盘目录（MediaStore/SAF）解耦
+        return new File(ctx.getFilesDir(), "lyrics");
+    }
+
+    @Override public File playlistDir() {
+        // 应用私有目录：永远可写、无需权限
+        return new File(ctx.getFilesDir(), "playlists");
+    }
+
     @Override public File tmpDir() {
         File d = new File(ctx.getCacheDir(), "dl");
         if (!d.exists()) d.mkdirs();
