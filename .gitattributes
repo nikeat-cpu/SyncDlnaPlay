@@ -1,0 +1,82 @@
+# ---------------------------------------------------------------------------
+# 统一行尾规则 —— 避免 Windows(CRLF) 与 macOS/Linux(LF) 之间产生"假改动"
+#
+# 背景：PC 上 core.autocrlf=true（工作区 CRLF / 仓库 LF），Mac 上未设置且原先
+#       没有 .gitattributes，git 直接按字节比较，于是 24 个文件在 Mac 上被误报
+#       为"已修改"（增删行数完全相等，是 CRLF<->LF 的典型特征）。
+# 规则：仓库内一律存 LF；检出时由 git 按平台/规则转换。
+# 文档：https://git-scm.com/docs/gitattributes#_end_of_line_conversion
+# ---------------------------------------------------------------------------
+
+# 默认：git 自动判定是否文本文件，仓库内存 LF
+* text=auto
+
+# 明确按文本处理并强制 LF（跨平台最安全，含 macOS 上 bash 直接执行脚本）
+*.sh          text eol=lf
+*.bash        text eol=lf
+*.py          text eol=lf
+*.js          text eol=lf
+*.mjs         text eol=lf
+*.cjs         text eol=lf
+*.json        text eol=lf
+*.yml         text eol=lf
+*.yaml        text eol=lf
+*.toml        text eol=lf
+*.md          text eol=lf
+*.txt         text eol=lf
+*.html        text eol=lf
+*.css         text eol=lf
+*.java        text eol=lf
+*.kt          text eol=lf
+*.xml         text eol=lf
+*.gradle      text eol=lf
+*.properties  text eol=lf
+*.pro         text eol=lf
+*.cfg         text eol=lf
+*.conf        text eol=lf
+*.ini         text eol=lf
+*.sql         text eol=lf
+*.tsv         text eol=lf
+Makefile      text eol=lf
+Dockerfile    text eol=lf
+.gitattributes text eol=lf
+.gitignore    text eol=lf
+
+# Windows 批处理 —— 必须保持 CRLF（PC 上的 .bat 启动脚本依赖它）
+*.bat         text eol=crlf
+*.cmd         text eol=crlf
+*.ps1         text eol=crlf
+
+# 二进制 —— 禁止任何转换或 diff
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.gif     binary
+*.webp    binary
+*.bmp     binary
+*.ico     binary
+*.ic_launcher binary
+*.mp3     binary
+*.m4a     binary
+*.wav     binary
+*.flac    binary
+*.mp4     binary
+*.mov     binary
+*.apk     binary
+*.aab     binary
+*.jar     binary
+*.keystore binary
+*.jks     binary
+*.p12     binary
+*.zip     binary
+*.gz      binary
+*.7z      binary
+*.rar     binary
+*.ttf     binary
+*.otf     binary
+*.woff    binary
+*.woff2   binary
+*.so      binary
+*.dylib   binary
+*.dll     binary
+*.exe     binary
