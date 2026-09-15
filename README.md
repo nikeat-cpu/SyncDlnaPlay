@@ -82,6 +82,35 @@ It ships in two independent flavors:
 ### 🌍 Bilingual UI
 - English and 简体中文, auto-detected from your system language, switchable in **Settings**
 
+### 📺 Built for Android TV remotes
+- **One APK for both**: install it on Android TV or a TV box and it registers as a TV app —
+  it shows up in the TV launcher's app row with its own banner, and it is **not** filtered out
+  for having no touchscreen
+- TV mode turns on automatically on a TV; you can also toggle it in
+  **Settings → TV mode (remote)** or force it with `?tv=1`
+- **Remote only** — no mouse, no touch:
+
+  | Key | What it does |
+  |---|---|
+  | ▲ ▼ ◀ ▶ | Move between visible controls (spatial navigation, no guessing the order) |
+  | OK / Enter | Confirm; text fields raise the system keyboard, dropdowns cycle in place |
+  | ◀ ▶ (while on a slider) | Adjust the value directly — **commits ~0.4 s after you stop**, no dragging |
+  | Back | Step up one level: dismiss keyboard → close panel → return to the nav rail → exit |
+  | ⏯ ⏭ ⏮ | Play / pause / next / previous |
+  | CH+ / CH− | Volume up / down |
+
+- Simpler than the phone UI: the left rail is the only entry point, content stays on the right,
+  and **nothing needs a long-press or a drag**
+- A clearly visible focus ring (readable from the couch), and **focus survives the list
+  refreshing every second** — when speakers come and go the ring stays on the same row
+  instead of jumping back to the top
+- Hitting the end of a list wraps **inside the same region** (the rail wraps in the rail,
+  the list wraps in the list) instead of leaping to another area
+- A permanent key-hint bar at the bottom that updates as focus moves
+- **Nothing is cut down**: discovery & multi-room sync, library, online source search and
+  resolution, persistent queue, lyrics, playlist export, source management and SMB browsing are
+  all identical to the phone build (TV mode is a shell — the business logic is untouched)
+
 ---
 
 ## Install
@@ -98,8 +127,24 @@ Two builds ship with every release — same features, different default language
 
 | APK | Language behaviour |
 |---|---|
-| `SyncDlnaPlay-standalone-v2.12.apk` | Follows your phone's language (English / 简体中文) |
-| `SyncDlnaPlay-standalone-v2.12-en.apk` | Starts in **English** whatever your phone language is (still switchable in Settings → 语言 / Language) |
+| `SyncDlnaPlay-standalone-v2.22.apk` | Follows your phone's language (English / 简体中文) |
+| `SyncDlnaPlay-standalone-v2.22-en.apk` | Starts in **English** whatever your phone language is (still switchable in Settings → 语言 / Language) |
+
+### Android TV / TV box
+
+The **same APK** is a valid TV app — no separate build to hunt for:
+
+```bash
+adb connect <tv-ip>:5555      # or use a USB stick / file manager on the TV
+adb install -r SyncDlnaPlay-standalone-v2.22.apk
+```
+
+- It appears in the **Android TV home screen** app row (own banner, `LEANBACK_LAUNCHER` entry)
+  and starts straight into TV mode
+- `android.hardware.touchscreen` is declared *not required*, so the app is offered on
+  TV/box devices that report no touchscreen
+- On a phone/tablet nothing changes: TV mode is off unless you turn it on
+  (see the remote key map in [Features → Built for Android TV remotes](#-built-for-android-tv-remotes))
 
 ### Docker control point
 
@@ -185,6 +230,35 @@ ANDROID_TOOLCHAIN=/path/to/android-toolchain bash build.sh
 A desktop regression harness is included: `bash android/tools/run_e2e.sh` boots the real Java backend
 on `127.0.0.1:8765` and drives the actual frontend in headless Chromium — **32 end-to-end checks**,
 including online search, stream resolution, Range requests, lyrics parsing and every panel.
+
+On macOS use `build-macos.sh` instead (extra patches for the BSD toolchain and Apple's JDK paths):
+
+```bash
+cd android
+ANDROID_TOOLCHAIN=$HOME/android-toolchain PY=python3 bash build-macos.sh
+```
+
+TV mode ships with two more suites under `android/tools/tvtest/`, runnable in one command:
+
+```bash
+bash android/tools/tvtest/run.sh          # both suites
+bash android/tools/tvtest/run.sh --nav    # remote-navigation assertions only
+```
+
+The script boots its own backend on a free port (`DATA_DIR` lands in a temp dir, the repo is never
+touched), then drives the real frontend in headless Chrome over CDP. It only ever calls
+`window.__tvKey()` — the very entry point the native `MainActivity` calls — so the key path is
+identical to a physical remote:
+
+- **33 TV navigation assertions** (`nav_checks.js`, 14 scenarios): initial focus, four-way spatial
+  movement, rail entry/exit and in-rail wrapping, panel scoping, slider ◀▶, media keys,
+  **focus surviving 4.5 s of continuous re-renders**, tiered Back, and no jump-to-top after a full
+  table repaint
+- **11 non-TV regression checks** (`regression_checks.js`): without `?tv=1` the phone/desktop layout
+  and existing features are untouched
+
+> It needs at least one DLNA speaker/TV discoverable on the LAN (focus has to move across real list
+> rows). With none found it says so and exits with code 3 instead of pretending to pass.
 
 ---
 

@@ -3,6 +3,46 @@
 All notable changes to SyncDlnaPlay are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions are `X.Y` (Android standalone) unless noted.
 
+## [2.22] — 2026-09-15
+
+### Added: Android TV / remote control support (TV mode)
+The same APK is now **a first-class TV app** as well: installed on Android TV or a TV box it shows up
+in the TV launcher's app row (`LEANBACK_LAUNCHER` entry + its own banner) and boots straight into TV mode.
+
+- **Full remote control**: ▲▼◀▶ spatial navigation, OK to confirm, tiered Back (dismiss keyboard →
+  close panel → return to nav rail → exit). DPAD, Enter, media keys (⏯ ⏭ ⏮) and channel keys
+  (CH± for volume) are translated to front-end semantics by the native layer.
+- **Interactions redesigned for a remote** (more direct than touch):
+  - No dragging sliders: focus one and use ◀ ▶ — it **commits ~0.4 s after you stop**
+  - Dropdowns cycle in place on OK, saving the "open list, then pick" step
+  - Text fields raise the system keyboard on OK; Back dismisses it
+- **10-foot layout**: the root flips to "nav rail left + content right + key-hint bar bottom",
+  with larger type and hit areas and a focus ring readable from the couch.
+- **Focus stability** (the main class of bugs fixed here):
+  - Focus no longer blinks when a list refreshes every second — the loss caused by a re-render is
+    now repaired **synchronously** in the MutationObserver microtask (before paint, so it is
+    invisible) instead of waiting on a 90 ms debounce plus a 700 ms poll.
+  - Pressing a key inside the re-render window no longer **falls back to the first list item**
+    (which looked like "the highlight randomly jumped to the top"); it restores the remembered
+    element signature / index instead.
+  - Hitting the end of a list wraps inside the same region (the rail wraps in the rail) rather
+    than leaping into a different area.
+  - The hint bar no longer rewrites the DOM when its text is unchanged, saving layout work on
+    weak TV boxes.
+- **TV manifest entries**: `android.software.leanback` and `android.hardware.touchscreen` are both
+  declared **not required** (otherwise TVs without a touchscreen get filtered out of install);
+  the application and activity both carry the TV banner.
+- **No features removed**: discovery & multi-room sync, library, online source search and resolution,
+  persistent queue, lyrics, playlist export, source management and SMB browsing all remain.
+  TV mode is a pure shell (`tv.js` + `tv.css`) — **not a line of business logic changed** — so the
+  phone build is unaffected (verified by regression: without `?tv=1` the phone/desktop layout is intact).
+- Toggle it manually in **Settings → TV mode (remote)**, or force it with `?tv=1`.
+
+### Fixed
+- **Focus lost after a list re-render**: replaced nodes used to take focus with them
+  (`activeElement` became `body`), leaving a measured ~150 ms window in which a key press jumped
+  back to the top of the list. Now focus is restored synchronously and re-located by signature.
+
 ## [2.21] — 2026-09-14
 
 ### Changed
