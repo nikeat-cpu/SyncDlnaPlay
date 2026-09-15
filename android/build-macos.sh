@@ -141,7 +141,7 @@ if [ ! -f "$KS" ]; then
     -dname "CN=Android Debug,O=Android,C=CN" >/dev/null 2>&1
   echo "    已生成调试证书"
 fi
-APK_NAME="SyncDlnaPlay-standalone-v2.21${APK_SUFFIX}.apk"
+APK_NAME="SyncDlnaPlay-standalone-v2.22${APK_SUFFIX}.apk"
 "$JAVA" -jar "$BT/lib/apksigner.jar" sign \
   --ks "$KS" --ks-pass pass:android --key-pass pass:android \
   --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \

@@ -2,12 +2,14 @@ package com.dlna.speaker;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.UiModeManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
+import android.content.res.Configuration;
 import android.net.Uri;
 import android.net.wifi.WifiManager;
 import android.os.Build;
@@ -18,6 +20,7 @@ import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.view.inputmethod.InputMethodManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -60,6 +63,19 @@ public class MainActivity extends Activity {
     private MusicDirs musicDirs;
     /** SAF 目录选择器的用途：music = 加进曲库，download = 设为下载目录 */
     private volatile String pendingTreeUse = "music";
+
+    /* ------------------------------------------------------ 电视 / 遥控器 */
+    /**
+     * 前端（tv.js）是否接管按键：
+     *   0 = 不接管，一切交回系统
+     *   1 = 电视模式，方向键 / OK / 媒体键全部转发给前端焦点引擎
+     *   2 = 正在输入文字，只有「返回」转发，其余留给系统输入法
+     * 由前端通过 setKeySink() 上报，避免两边同时处理同一次按键。
+     */
+    private volatile int keySink = 0;
+    /** 已被前端消费的按键，抬起事件也要一起吞掉，否则 WebView 会再触发一次 */
+    private String heldTvKey = null;
+    private Boolean tvDevice = null;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -327,6 +343,81 @@ public class MainActivity extends Activity {
         super.onActivityResult(req, res, data);
     }
 
+    /* ------------------------------------------------- 电视 / 遥控器按键 */
+
+    /** 是否运行在电视 / 机顶盒上（Android TV，或系统 UI 模式为电视） */
+    boolean isTvDevice() {
+        if (tvDevice != null) return tvDevice;
+        boolean tv = false;
+        try {
+            PackageManager pm = getPackageManager();
+            tv = pm.hasSystemFeature("android.software.leanback")
+                    || pm.hasSystemFeature("android.hardware.type.television");
+        } catch (Throwable ignore) { }
+        if (!tv) {
+            try {
+                UiModeManager um = (UiModeManager) getSystemService(Context.UI_MODE_SERVICE);
+                if (um != null && um.getCurrentModeType() == Configuration.UI_MODE_TYPE_TELEVISION) {
+                    tv = true;
+                }
+            } catch (Throwable ignore) { }
+        }
+        tvDevice = tv;
+        return tv;
+    }
+
+    /** 遥控器按键 → 前端约定的动作名；不是遥控键则返回 null */
+    private static String tvKeyOf(int code) {
+        switch (code) {
+            case KeyEvent.KEYCODE_DPAD_UP:        return "up";
+            case KeyEvent.KEYCODE_DPAD_DOWN:      return "down";
+            case KeyEvent.KEYCODE_DPAD_LEFT:      return "left";
+            case KeyEvent.KEYCODE_DPAD_RIGHT:     return "right";
+            case KeyEvent.KEYCODE_DPAD_CENTER:
+            case KeyEvent.KEYCODE_ENTER:
+            case KeyEvent.KEYCODE_NUMPAD_ENTER:
+            case KeyEvent.KEYCODE_BUTTON_A:       return "ok";
+            case KeyEvent.KEYCODE_BACK:           return "back";
+            case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
+            case KeyEvent.KEYCODE_HEADSETHOOK:
+            case KeyEvent.KEYCODE_MEDIA_PLAY:
+            case KeyEvent.KEYCODE_MEDIA_PAUSE:    return "togglePlay";
+            case KeyEvent.KEYCODE_MEDIA_NEXT:     return "next";
+            case KeyEvent.KEYCODE_MEDIA_PREVIOUS: return "prev";
+            case KeyEvent.KEYCODE_MEDIA_STOP:     return "stop";
+            case KeyEvent.KEYCODE_CHANNEL_UP:     return "volUp";
+            case KeyEvent.KEYCODE_CHANNEL_DOWN:   return "volDown";
+            default: return null;
+        }
+    }
+
+    /**
+     * 遥控器按键总入口：Java 只做「翻译 + 转发」，具体怎么移动由前端焦点引擎决定。
+     * keySink=0（未启用电视模式）时这里完全不介入，所以手机/桌面行为一字不变。
+     */
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        String k = tvKeyOf(event.getKeyCode());
+        if (k == null || keySink == 0) return super.dispatchKeyEvent(event);
+
+        // 返回键沿用原有链路（onKeyDown / onBackPressed → window.__onBack）
+        if ("back".equals(k)) return super.dispatchKeyEvent(event);
+
+        // 正在输入文字：方向键与 OK 必须交回系统输入法，否则打不了字
+        if (keySink == 2) return super.dispatchKeyEvent(event);
+
+        int act = event.getAction();
+        if (act == KeyEvent.ACTION_DOWN || act == KeyEvent.ACTION_MULTIPLE) {
+            runJs("window.__tvKey && window.__tvKey('" + k + "')");
+            heldTvKey = k;      // 长按的重复事件同样是 ACTION_DOWN，可连续移动 / 连续调值
+            return true;
+        }
+        if (act == KeyEvent.ACTION_UP) {
+            if (k.equals(heldTvKey)) { heldTvKey = null; return true; }
+        }
+        return super.dispatchKeyEvent(event);
+    }
+
     /* ------------------------------------------------------------ 返回键 */
 
     @Override
@@ -345,6 +436,11 @@ public class MainActivity extends Activity {
     }
 
     private void handleBack() {
+        // 电视模式下正在打字：先收键盘，不要一按返回就退出 App
+        if (keySink == 2) {
+            runJs("window.__tvKey && window.__tvKey('back')");
+            return;
+        }
         runJs("window.__onBack ? window.__onBack() : 'exit'", true);
     }
 
@@ -433,7 +529,60 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public String getVersion() {
-            return "2.21-standalone";
+            try {
+                return getPackageManager().getPackageInfo(getPackageName(), 0).versionName + "-standalone";
+            } catch (Throwable t) {
+                return "2.22-standalone";
+            }
+        }
+
+        /* ------------------------------------------------ 电视 / 遥控器桥 */
+
+        /** 电视环境判定：前端据此自动开启电视模式 */
+        @JavascriptInterface
+        public String isTv() {
+            return isTvDevice() ? "1" : "0";
+        }
+
+        /**
+         * 上报按键接管级别：0=不接管 1=电视模式全接管 2=正在输入（只接管返回）。
+         * 与前端 tv.js 一一对应，保证同一次按键只被一边处理。
+         */
+        @JavascriptInterface
+        public void setKeySink(int mode) {
+            keySink = (mode < 0 || mode > 2) ? 0 : mode;
+            heldTvKey = null;
+        }
+
+        /** 唤起系统输入法（电视上输入框聚焦不会自动弹键盘） */
+        @JavascriptInterface
+        public void showKeyboard() {
+            runOnUiThread(new Runnable() {
+                @Override public void run() {
+                    try {
+                        if (web == null) return;
+                        web.requestFocus();
+                        InputMethodManager imm = (InputMethodManager)
+                                getSystemService(Context.INPUT_METHOD_SERVICE);
+                        if (imm != null) imm.showSoftInput(web, InputMethodManager.SHOW_IMPLICIT);
+                    } catch (Throwable ignore) { }
+                }
+            });
+        }
+
+        /** 收起输入法 */
+        @JavascriptInterface
+        public void hideKeyboard() {
+            runOnUiThread(new Runnable() {
+                @Override public void run() {
+                    try {
+                        if (web == null) return;
+                        InputMethodManager imm = (InputMethodManager)
+                                getSystemService(Context.INPUT_METHOD_SERVICE);
+                        if (imm != null) imm.hideSoftInputFromWindow(web.getWindowToken(), 0);
+                    } catch (Throwable ignore) { }
+                }
+            });
         }
 
         /** 最近的崩溃记录（新的在前），供界面「运行日志」展示 */

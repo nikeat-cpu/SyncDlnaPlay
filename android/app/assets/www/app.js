@@ -2475,6 +2475,17 @@ function closeSheet() {
   $('sheet').style.display = 'none';
   $('mask').style.display = 'none';
 }
+/* ---- 电视模式开关（实现都在 tv.js，未加载时安静降级） ---- */
+function tvOn() {
+  try { return !!(window.TV && window.TV.enabled()); } catch (e) { return false; }
+}
+function tvToggle() {
+  if (!window.TV) { toast('当前环境不支持电视模式', 'err'); return; }
+  const on = window.TV.toggle();
+  toast(on ? '已开启电视模式（遥控器）' : '已关闭电视模式');
+  settingsSheet();
+}
+
 function settingsSheet() {
   openSheet('设置', `
     <div class="chips">
@@ -2486,6 +2497,16 @@ function settingsSheet() {
     <div class="chips">
       <div class="chip ${(window.I18N && I18N.lang) === 'zh' ? 'on' : ''}" onclick="I18N.set('zh')">中文</div>
       <div class="chip ${(window.I18N && I18N.lang) === 'en' ? 'on' : ''}" onclick="I18N.set('en')">English</div>
+    </div>
+
+    <div class="sec-title">电视模式（遥控器）</div>
+    <div class="chips">
+      <div class="chip ${tvOn() ? 'on' : ''}" onclick="tvToggle()">📺 电视模式：${tvOn() ? '开' : '关'}</div>
+    </div>
+    <div class="sm muted" style="margin-top:8px">
+      开关后界面立刻切换：左侧竖排导航、控件放大、焦点高亮。<br>
+      遥控器：方向键选择 · <strong>OK</strong> 确认 · <strong>返回</strong> 上一级；
+      媒体键 ⏯ ⏭ ⏮ 控制播放；频道键 CH± 调音量。装在电视 / 盒子上会自动开启。
     </div>
 
     <div class="sec-title">歌词字号（竖屏）</div>

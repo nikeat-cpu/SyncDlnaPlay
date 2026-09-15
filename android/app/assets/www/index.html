@@ -6,6 +6,8 @@
 <meta name="theme-color" content="#04060c">
 <title>SyncDlnaPlay</title>
 <link rel="stylesheet" href="app.css">
+<!-- 电视模式（Android TV / 机顶盒 + 遥控器）：只在 <html class="tv"> 下生效 -->
+<link rel="stylesheet" href="tv.css">
 </head>
 <body>
 
@@ -125,7 +127,7 @@
   <!-- ---------- 迷你播放条 ---------- -->
   <div class="mini" id="mini" style="display:none">
     <div class="mini-prog"><i id="miniProg"></i></div>
-    <div class="mini-in" id="miniOpen">
+    <div class="mini-in tvf" id="miniOpen">
       <div class="mini-ico" id="miniIco">♫</div>
       <div class="mini-txt">
         <div class="t1" id="miniTitle">未播放</div>
@@ -179,5 +181,7 @@
 <script src="i18n.js"></script>
 <script src="plugins-runtime.js"></script>
 <script src="app.js"></script>
+<!-- 电视模式外壳层：焦点导航 + 遥控器语义（未开启电视模式时完全不介入） -->
+<script src="tv.js"></script>
 </body>
 </html>

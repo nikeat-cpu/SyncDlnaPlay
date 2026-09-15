@@ -1,0 +1,229 @@
+/* =====================================================================
+   电视模式样式 · tv.css
+   ---------------------------------------------------------------------
+   只在 <html class="tv"> 下生效（由 tv.js 决定），桌面/手机完全不受影响。
+   目标：10 尺观看距离（3 米外也能看清）+ 遥控器焦点可见。
+
+   布局骨架：
+     ┌──────────────────────────────┐
+     │ 顶栏 标题 / 当前音响 / 设置      │
+     ├────────┬─────────────────────┤
+     │ 左导航 │   内容区（可滚动）     │
+     │ 5 个   │                     │
+     │ Tab    │                     │
+     ├────────┴─────────────────────┤
+     │ 迷你播放条                     │
+     ├──────────────────────────────┤
+     │ 按键提示条                     │
+     └──────────────────────────────┘
+   ===================================================================== */
+
+/* ---------------------------------------------- 1. 骨架：横屏 + 左导航 */
+html.tv body { font-size:17px; }
+
+html.tv .app {
+  display:grid;
+  grid-template-columns:180px minmax(0, 1fr);
+  grid-template-rows:auto minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    "top  top"
+    "nav  main"
+    "mini mini"
+    "cue  cue";
+  height:100%;
+}
+
+html.tv .topbar { grid-area:top; padding:16px 24px; gap:14px; }
+html.tv .brand { font-size:21px; letter-spacing:.26em; }
+html.tv .topdev { font-size:15px; padding:11px 18px; max-width:44%; }
+
+html.tv main {
+  grid-area:main;
+  padding:0 0 16px;
+  overflow-y:auto;
+}
+
+/* 左导航栏：底部 Tab 栏竖起来，遥控器左右切换更自然 */
+html.tv .nav {
+  grid-area:nav;
+  position:static;
+  flex-direction:column;
+  align-items:stretch;
+  height:auto;
+  width:auto;
+  padding:12px 10px;
+  gap:6px;
+  border-top:0;
+  border-right:1px solid rgba(34,230,255,.20);
+  background:rgba(6,11,20,.72);
+  backdrop-filter:none;
+  -webkit-backdrop-filter:none;
+}
+html.tv .navbtn {
+  flex:0 0 auto;
+  flex-direction:row;
+  justify-content:flex-start;
+  gap:12px;
+  padding:16px 12px;
+  font-size:15px;
+  letter-spacing:.06em;
+  border-radius:5px;
+  line-height:1.2;
+}
+html.tv .navbtn i { font-size:26px; }
+html.tv .navbtn .ni { width:28px; height:28px; stroke-width:1.7; }
+html.tv .navbtn.on { transform:none; }
+html.tv .navbtn.on::before {
+  top:50%; left:0; width:3px; height:58%;
+  transform:translateY(-50%);
+  border-radius:0 2px 2px 0;
+}
+
+/* 迷你播放条：横跨整宽，居中在底部 */
+html.tv .mini {
+  grid-area:mini;
+  position:relative;
+  left:auto; right:auto; bottom:auto;
+  height:auto; min-height:82px;
+}
+html.tv .mini-prog { height:3px; }
+html.tv .mini-ico { width:56px; height:56px; flex:0 0 56px; font-size:25px; }
+html.tv .mini-txt .t1 { font-size:18px; }
+html.tv .mini-txt .t2 { font-size:13.5px; }
+html.tv .mini-ctl { gap:6px; padding-right:18px; }
+html.tv .mini-in { padding:0 10px 0 20px; }
+
+/* 提示条（tv.js 动态插入） */
+html.tv .tvcue {
+  grid-area:cue;
+  display:flex; align-items:center; justify-content:center;
+  flex-wrap:wrap; gap:14px;
+  padding:9px 16px;
+  font-size:13.5px; color:var(--tx3);
+  background:rgba(4,6,12,.92);
+  border-top:1px solid rgba(34,230,255,.14);
+  letter-spacing:.02em;
+}
+html.tv body > .tvcue { position:fixed; left:0; right:0; bottom:0; z-index:60; }
+html.tv .tvcue b { color:var(--cy); font-weight:600; }
+html.tv .tvcue .sep { color:rgba(34,230,255,.32); }
+
+/* ---------------------------------------------- 2. 焦点环（最关键的可见性） */
+html.tv .tv-focus {
+  outline:3px solid var(--cy);
+  outline-offset:2px;
+  border-radius:5px;
+  position:relative;
+  z-index:3;
+  background:rgba(34,230,255,.12);
+  box-shadow:0 0 0 1px rgba(4,6,12,.85),
+             0 0 28px rgba(34,230,255,.55),
+             inset 0 0 22px rgba(34,230,255,.10);
+}
+html.tv .item.tv-focus {
+  background:linear-gradient(90deg, rgba(34,230,255,.22), rgba(34,230,255,.04));
+}
+html.tv .item.tv-focus .t1 { color:#eafcff; }
+html.tv .navbtn.tv-focus { color:var(--cy); }
+html.tv .navbtn.tv-focus i { filter:drop-shadow(0 0 10px rgba(34,230,255,.85)); }
+html.tv .chip.tv-focus,
+html.tv .segbtn.tv-focus,
+html.tv .crumb.tv-focus { color:#fff; }
+html.tv .btn.tv-focus,
+html.tv .iconbtn.tv-focus { color:var(--cy); }
+html.tv input.tv-focus,
+html.tv select.tv-focus {
+  outline:3px solid var(--cy);
+  outline-offset:1px;
+  box-shadow:0 0 26px rgba(34,230,255,.5);
+}
+html.tv .tv-focus:active { transform:none; }
+
+/* ---------------------------------------------- 3. 放大：3 米外看得清 */
+html.tv .item { padding:16px 22px; gap:16px; min-height:76px; }
+html.tv .item .ico { width:54px; height:54px; flex:0 0 54px; font-size:23px; }
+html.tv .item .t1 { font-size:19.5px; }
+html.tv .item .t2 { font-size:14.5px; margin-top:4px; }
+html.tv .item .no { width:38px; flex:0 0 38px; font-size:17px; }
+html.tv .item .act { gap:6px; }
+html.tv .empty { padding:64px 32px; font-size:16px; }
+
+html.tv .bar, html.tv .bar2 { gap:12px; padding:14px 22px; }
+html.tv .crumbs { gap:8px; padding:4px 22px 12px; }
+html.tv .crumb { font-size:15px; padding:10px 15px; }
+
+html.tv .btn { font-size:16px; padding:13px 22px; border-radius:5px; }
+html.tv .btn.sm { font-size:15px; padding:11px 17px; }
+html.tv .iconbtn { width:54px; height:54px; font-size:22px; }
+html.tv .iconbtn.sm2 { width:48px; height:48px; font-size:20px; }
+html.tv .iconbtn.big { width:66px; height:66px; font-size:26px; }
+html.tv .iconbtn .iv { width:20px; height:20px; }
+html.tv .item .ico .iv { width:23px; height:23px; }
+
+html.tv input, html.tv select { font-size:16px; padding:13px 15px; }
+html.tv input[type=range] { height:34px; }
+html.tv input[type=range]::-webkit-slider-runnable-track { height:9px; }
+html.tv input[type=range]::-webkit-slider-thumb {
+  width:26px; height:26px; margin-top:-9px;
+}
+html.tv .vbtn { flex:0 0 54px; width:54px; height:54px; font-size:28px; }
+html.tv .vrow b { width:52px; font-size:18px; }
+html.tv .vrow span { font-size:16px; }
+
+html.tv .chips { gap:12px; margin-top:16px; }
+html.tv .chip { font-size:16px; padding:13px 19px; border-radius:5px; }
+html.tv .seg { padding:3px; }
+html.tv .segbtn { font-size:16px; padding:12px 20px; }
+html.tv .sec-title { font-size:15.5px; margin-top:24px; }
+html.tv .sm { font-size:14px; }
+html.tv .pager { padding:18px 22px 28px; }
+
+/* 弹层：底部抽屉改成居中大面板（遥控器不用盯着屏幕下沿找焦点） */
+html.tv .sheet {
+  left:50%; right:auto; bottom:auto; top:50%;
+  transform:translate(-50%, -50%);
+  width:min(1080px, 84vw);
+  max-height:84vh;
+  border:1px solid rgba(34,230,255,.38);
+  border-radius:8px;
+  padding-bottom:0;
+  animation:tvpop .18s ease;
+}
+@keyframes tvpop {
+  from { opacity:.35; transform:translate(-50%,-50%) scale(.965); }
+  to   { opacity:1;   transform:translate(-50%,-50%) scale(1); }
+}
+html.tv .sheet-hd { padding:20px 24px 15px; font-size:18px; }
+html.tv .sheet-bd { padding:16px 24px 26px; }
+html.tv .sheet .grab { display:none; }
+html.tv .mask { background:rgba(2,4,8,.78); }
+
+/* 正在播放：封面、歌词、进度条一起放大 */
+html.tv .np-art { font-size:96px; }
+html.tv .np-title { font-size:27px; }
+html.tv .np-sub { font-size:15.5px; }
+html.tv .np-time { font-size:14.5px; }
+html.tv .np-ctl .iconbtn { width:64px; height:64px; font-size:28px; }
+html.tv .lrc-line { font-size:26px; }
+html.tv .lrc-line.on { font-size:33px; }
+html.tv .lrc-off .btn { font-size:14px; padding:9px 14px; }
+
+/* 启动页 */
+html.tv .setup-card { max-width:620px; }
+html.tv .setup h1 { font-size:34px; }
+html.tv .setup .logo img { width:170px; height:170px; }
+html.tv .setup .sub { font-size:13px; }
+html.tv .setup .btn { font-size:17px; padding:15px 26px; }
+
+/* 歌词/装饰在电视上柔和一点，别太刺眼 */
+html.tv body::after { opacity:.28; }
+html.tv .fx-hud { opacity:.4; }
+
+/* 横屏矮窗口（部分盒子 720p）时再收一点，保证内容区不被压扁 */
+@media (max-height:520px) {
+  html.tv .navbtn { padding:12px 10px; font-size:14px; }
+  html.tv .navbtn .ni { width:24px; height:24px; }
+  html.tv .mini { min-height:68px; }
+  html.tv .mini-ico { width:46px; height:46px; flex:0 0 46px; font-size:21px; }
+  html.tv .item { min-height:64px; padding:13px 20px; }
+}
