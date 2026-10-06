@@ -433,7 +433,7 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public String getVersion() {
-            return "2.21-standalone";
+            return "2.22-standalone";
         }
 
         /** 最近的崩溃记录（新的在前），供界面「运行日志」展示 */

@@ -186,8 +186,23 @@ public final class Api implements HttpSrv.Handler {
             }
             res.text(404, "not found");
         } catch (Throwable e) {
-            res.json(500, Json.map("ok", false, "msg", String.valueOf(e)));
+            res.json(500, Json.map("ok", false, "msg", friendlyNetError(e)));
         }
+    }
+
+    /** 把底层网络异常翻译成可读提示（否则界面会直接冒 java.net.ConnectException） */
+    private static String friendlyNetError(Throwable e) {
+        String s = String.valueOf(e);
+        if (s.contains("ConnectException")) {
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("/([0-9.]+):").matcher(s);
+            String ip = m.find() ? m.group(1) : "";
+            return "无法连接到 " + (ip.isEmpty() ? "设备" : ip) + " —— 设备可能离线，或与手机不在同一网络";
+        }
+        if (s.contains("SocketTimeoutException") || s.contains("timeout")) {
+            return "连接超时 —— 设备响应太慢或网络不稳定";
+        }
+        if (s.contains("UnknownHostException")) return "无法解析主机地址";
+        return s;
     }
 
     private void serveAsset(String path, HttpSrv.Res res) {
@@ -478,7 +493,7 @@ public final class Api implements HttpSrv.Handler {
         if (path.equals("/api/jump")) {
             Map<String, Object> b = req.json();
             boolean ok = player.jump(Json.i(b, "index", 0));
-            res.json(Json.map("ok", ok, "result", ok ? "ok" : "跳转失败"));
+            res.json(Json.map("ok", ok, "result", ok ? "ok" : player.getLastError()));
             return;
         }
         if (path.equals("/api/queue")) {

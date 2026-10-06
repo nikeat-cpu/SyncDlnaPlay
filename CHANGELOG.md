@@ -3,6 +3,18 @@
 All notable changes to SyncDlnaPlay are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions are `X.Y` (Android standalone) unless noted.
 
+## [2.22] — 2026-10-06
+
+### Fixed
+- **Playback to a speaker that changed its IP now self-heals**: if every speaker rejects the
+  SetAVTransportURI command (typical after the router re-assigns addresses or the phone switches
+  Wi-Fi), the app re-scans the LAN once, finds the same speakers by UDN and retries automatically.
+- **Readable network errors**: raw Java exceptions are no longer shown — instead of
+  `java.net.ConnectException: Failed to connect to /192.168.124.10:49153` you now get
+  "Cannot connect to 192.168.124.10 — the device may be offline, or on a different network from the phone".
+- **False success fixed**: when the push to the speaker failed, the queue page still toasted
+  "playing". The failure is now detected and reported.
+
 ## [2.21] — 2026-09-14
 
 ### Changed

@@ -2079,7 +2079,8 @@ async function playOne(kind, i, forcePhone) {
     const q = (S.state && S.state.player && Array.isArray(S.state.player.queue)) ? S.state.player.queue : [];
     const idx = q.length;
     await apiPost('/api/queue', { action: 'add', tracks: [track] }, 40000);
-    await apiPost('/api/jump', { index: idx }, 9000);
+    const rj = await apiPost('/api/jump', { index: idx }, 9000);
+    if (rj.ok === false) throw new Error(rj.result || '推送失败');
     toast('已开始播放', 'ok');
     await tick(true);
   } catch (e) { toast('播放失败：' + e.message, 'err'); }

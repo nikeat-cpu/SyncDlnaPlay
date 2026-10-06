@@ -253,6 +253,27 @@ public final class Player {
         return playIndex(i);
     }
 
+    /** 并行给所有音响发 SetAVTransportURI；任一成功返回 true */
+    private boolean pushSetUri(final List<Dlna.Renderer> rs, final String url, final String title,
+                               final String dur, final String artist, final String album) {
+        ExecutorService setEx = Executors.newFixedThreadPool(Math.min(8, rs.size()));
+        List<Future<Boolean>> setFuts = new ArrayList<Future<Boolean>>();
+        for (final Dlna.Renderer r : rs) {
+            setFuts.add(setEx.submit(new java.util.concurrent.Callable<Boolean>() {
+                @Override public Boolean call() {
+                    Dlna.SoapResult sr = r.setUri(url, title, dur, artist, album, null, null, 8);
+                    return Boolean.valueOf(sr.ok);
+                }
+            }));
+        }
+        boolean anySet = false;
+        for (Future<Boolean> f : setFuts) {
+            try { if (Boolean.TRUE.equals(f.get(10, TimeUnit.SECONDS))) anySet = true; } catch (Exception ignore) { }
+        }
+        setEx.shutdownNow();
+        return anySet;
+    }
+
     /** 播放当前 index 指向的曲目 */
     public boolean playIndex(int i) {
         Map<String, Object> track;
@@ -295,23 +316,21 @@ public final class Player {
         // 阶段一：并行给所有音响 SetAVTransportURI（推流地址），互不阻塞，
         //   这样 WiFi 弱的音响不会因为串行排队而更晚才开始准备。
         long t0 = System.currentTimeMillis();
-        ExecutorService setEx = Executors.newFixedThreadPool(Math.min(8, rs.size()));
-        List<Future<Boolean>> setFuts = new ArrayList<Future<Boolean>>();
-        for (final Dlna.Renderer r : rs) {
-            setFuts.add(setEx.submit(new java.util.concurrent.Callable<Boolean>() {
-                @Override public Boolean call() {
-                    Dlna.SoapResult sr = r.setUri(url, title, dur, artist, album, null, null, 8);
-                    return Boolean.valueOf(sr.ok);
-                }
-            }));
-        }
-        boolean anySet = false;
-        for (Future<Boolean> f : setFuts) {
-            try { if (Boolean.TRUE.equals(f.get(10, TimeUnit.SECONDS))) anySet = true; } catch (Exception ignore) { }
-        }
-        setEx.shutdownNow();
+        boolean anySet = pushSetUri(rs, url, title, dur, artist, album);
         if (!anySet) {
-            lastError = "推送到音响失败（SetAVTransportURI 全部失败）";
+            // 音响 IP 可能变了（路由器重新分配 / 手机换了 Wi-Fi），缓存的控制地址失联：
+            // 同步重扫一次局域网，按 UDN 找回设备后自动重试。
+            try { dm.refresh(); } catch (Throwable ignore) { }
+            List<Dlna.Renderer> rs2 = new ArrayList<Dlna.Renderer>();
+            for (String udn : tgs) {
+                Dlna.Renderer r2 = dm.renderer(udn);
+                if (r2 != null) rs2.add(r2);
+            }
+            if (!rs2.isEmpty()) anySet = pushSetUri(rs2, url, title, dur, artist, album);
+            if (anySet) rs = rs2;
+        }
+        if (!anySet) {
+            lastError = "无法连接音响（已自动重新扫描仍未成功）。请确认音响已开机、与手机在同一 Wi-Fi";
             playing = false;
             return false;
         }
