@@ -39,6 +39,13 @@ services:
       - LOG_LEVEL=INFO
       # 状态持久化：targets / delay_ms 保存路径
       - STATE_FILE=/data/state.json
+      # 网页前端（随镜像内置安卓 App 那套 SPA，一般无需修改）
+      - WEB_DIR=/app/web
+      # 内置音源（MusicFree 插件，只读）
+      - BUILTIN_PLUGINS_DIR=/app/builtin-plugins
+      # 数据目录：用户自建音源 / 歌词库 / 导出的播放列表
+      - DATA_DIR=/data
+      - PLUGINS_DIR=/data/plugins
 
     # 注意：不要挂载 /etc/localtime —— OpenWrt 上它是符号链接，
     # Docker 会尝试 mkdir 导致容器启动失败。时区改用 TZ 环境变量解决。

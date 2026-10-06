@@ -82,6 +82,35 @@ It ships in two independent flavors:
 ### 🌍 Bilingual UI
 - English and 简体中文, auto-detected from your system language, switchable in **Settings**
 
+### 📺 Built for Android TV remotes
+- **One APK for both**: install it on Android TV or a TV box and it registers as a TV app —
+  it shows up in the TV launcher's app row with its own banner, and it is **not** filtered out
+  for having no touchscreen
+- TV mode turns on automatically on a TV; you can also toggle it in
+  **Settings → TV mode (remote)** or force it with `?tv=1`
+- **Remote only** — no mouse, no touch:
+
+  | Key | What it does |
+  |---|---|
+  | ▲ ▼ ◀ ▶ | Move between visible controls (spatial navigation, no guessing the order) |
+  | OK / Enter | Confirm; text fields raise the system keyboard, dropdowns cycle in place |
+  | ◀ ▶ (while on a slider) | Adjust the value directly — **commits ~0.4 s after you stop**, no dragging |
+  | Back | Step up one level: dismiss keyboard → close panel → return to the nav rail → exit |
+  | ⏯ ⏭ ⏮ | Play / pause / next / previous |
+  | CH+ / CH− | Volume up / down |
+
+- Simpler than the phone UI: the left rail is the only entry point, content stays on the right,
+  and **nothing needs a long-press or a drag**
+- A clearly visible focus ring (readable from the couch), and **focus survives the list
+  refreshing every second** — when speakers come and go the ring stays on the same row
+  instead of jumping back to the top
+- Hitting the end of a list wraps **inside the same region** (the rail wraps in the rail,
+  the list wraps in the list) instead of leaping to another area
+- A permanent key-hint bar at the bottom that updates as focus moves
+- **Nothing is cut down**: discovery & multi-room sync, library, online source search and
+  resolution, persistent queue, lyrics, playlist export, source management and SMB browsing are
+  all identical to the phone build (TV mode is a shell — the business logic is untouched)
+
 ---
 
 ## Install
@@ -98,8 +127,24 @@ Two builds ship with every release — same features, different default language
 
 | APK | Language behaviour |
 |---|---|
-| `SyncDlnaPlay-standalone-v2.12.apk` | Follows your phone's language (English / 简体中文) |
-| `SyncDlnaPlay-standalone-v2.12-en.apk` | Starts in **English** whatever your phone language is (still switchable in Settings → 语言 / Language) |
+| `SyncDlnaPlay-standalone-v2.22.apk` | Follows your phone's language (English / 简体中文) |
+| `SyncDlnaPlay-standalone-v2.22-en.apk` | Starts in **English** whatever your phone language is (still switchable in Settings → 语言 / Language) |
+
+### Android TV / TV box
+
+The **same APK** is a valid TV app — no separate build to hunt for:
+
+```bash
+adb connect <tv-ip>:5555      # or use a USB stick / file manager on the TV
+adb install -r SyncDlnaPlay-standalone-v2.22.apk
+```
+
+- It appears in the **Android TV home screen** app row (own banner, `LEANBACK_LAUNCHER` entry)
+  and starts straight into TV mode
+- `android.hardware.touchscreen` is declared *not required*, so the app is offered on
+  TV/box devices that report no touchscreen
+- On a phone/tablet nothing changes: TV mode is off unless you turn it on
+  (see the remote key map in [Features → Built for Android TV remotes](#-built-for-android-tv-remotes))
 
 ### Docker control point
 
@@ -118,33 +163,53 @@ The image is `python:3.12-alpine` + **standard library only** (the web layer is 
 subset) → **59 MB**, second-level builds, tiny RAM footprint. Audio never passes through the container:
 speakers pull streams straight from the source.
 
+**The web UI and the Android app are the same front end.** The image serves the exact same
+zero-dependency SPA from `android/app/assets/www`, so both builds always have identical screens and
+features (bilingual UI, themes, immersive lyrics, persistent queue, source manager, SMB browsing…).
+Nothing exists on the phone but not in the browser. The Python back end implements the SPA's API
+contract, so a front-end change is made in exactly one place.
+
+> The image bundles `samba-client` for "scan the LAN / list shares / browse folders".
+> Running on a host instead? You need `smbclient` there — on macOS share *names* still work
+> without it (falls back to the built-in `smbutil`).
+
+> Local debugging: `./run-macos.sh` starts the server, detects your LAN IP, feeds it to `HOST_IP`
+> and points you at `http://<your-ip>:5000`.
+
+All mutable data (your own sources, the lyric store, exported playlists, the folder-source config)
+lives under `DATA_DIR` — `/data` inside the container, i.e. the persistent volume already wired up
+in `docker-compose.yml`.
+
 ---
 
 ## How it works
 
 ```
 Android app                              Docker flavor
-┌─────────────────────────────┐          ┌──────────────────┐
-│ WebView UI (SPA, bilingual) │          │  Web UI (:5000)  │
-│ ├─ HTTP server  :8765       │          │  UPnP ControlPt  │
-│ ├─ DLNA control point       │  SSDP    │  (stdlib only)   │
-│ ├─ SMB client (jcifs-ng)    │ ───────► └────────┬─────────┘
-│ ├─ MediaStore library       │                   │ SetURI + Play
-│ └─ MusicFree plugin runtime │                   ▼
-└──────────────┬──────────────┘          ┌──────────────────┐
-               │ SetURI + Play           │    DLNA speaker  │
-               ▼                         │  (renders audio) │
-        ┌──────────────────┐             └────────┬─────────┘
-        │   DLNA speaker   │                      │ HTTP GET
-        │  (renders audio) │ ◄────────────────────┘
-        └────────┬─────────┘        speaker pulls the audio stream
-                 │ HTTP GET         directly from the source
-                 ▼
-      phone storage / SMB / online CDN
+┌─────────────────────────────┐          ┌──────────────────────────┐
+│ WebView UI (SPA, bilingual) │          │  the same SPA (browser)  │
+│ ├─ HTTP server  :8765       │          │  ├─ Python HTTP  :5000   │
+│ ├─ DLNA control point       │  SSDP    │  ├─ DLNA control point   │
+│ ├─ SMB client (jcifs-ng)    │ ───────► │  ├─ SMB (smbclient)      │
+│ ├─ MediaStore library       │          │  ├─ local/mounted scan   │
+│ └─ MusicFree plugin runtime │          │  └─ /__proxy data relay  │
+└──────────────┬──────────────┘          └────────────┬─────────────┘
+               │ SetURI + Play                        │ SetURI + Play
+               ▼                                      ▼
+        ┌──────────────────┐                  ┌──────────────────┐
+        │   DLNA speaker   │                  │   DLNA speaker   │
+        │  (renders audio) │                  │  (renders audio) │
+        └────────┬─────────┘                  └────────┬─────────┘
+                 │ HTTP GET                            │ HTTP GET
+                 ▼                                     ▼
+      phone storage / SMB / online CDN     local dirs · /stream?sid= relay
 ```
 
 The control side only *issues commands*. Audio streams flow **directly from the source to the speaker**,
 so casting costs almost nothing on the phone or the container.
+
+The two builds differ only in *where the front end runs*: in a WebView on Android, in your browser for
+Docker. The plugin runtime (`plugins-runtime.js`) is plain JavaScript, so it runs in both.
 
 ---
 
@@ -166,6 +231,35 @@ A desktop regression harness is included: `bash android/tools/run_e2e.sh` boots 
 on `127.0.0.1:8765` and drives the actual frontend in headless Chromium — **32 end-to-end checks**,
 including online search, stream resolution, Range requests, lyrics parsing and every panel.
 
+On macOS use `build-macos.sh` instead (extra patches for the BSD toolchain and Apple's JDK paths):
+
+```bash
+cd android
+ANDROID_TOOLCHAIN=$HOME/android-toolchain PY=python3 bash build-macos.sh
+```
+
+TV mode ships with two more suites under `android/tools/tvtest/`, runnable in one command:
+
+```bash
+bash android/tools/tvtest/run.sh          # both suites
+bash android/tools/tvtest/run.sh --nav    # remote-navigation assertions only
+```
+
+The script boots its own backend on a free port (`DATA_DIR` lands in a temp dir, the repo is never
+touched), then drives the real frontend in headless Chrome over CDP. It only ever calls
+`window.__tvKey()` — the very entry point the native `MainActivity` calls — so the key path is
+identical to a physical remote:
+
+- **33 TV navigation assertions** (`nav_checks.js`, 14 scenarios): initial focus, four-way spatial
+  movement, rail entry/exit and in-rail wrapping, panel scoping, slider ◀▶, media keys,
+  **focus surviving 4.5 s of continuous re-renders**, tiered Back, and no jump-to-top after a full
+  table repaint
+- **11 non-TV regression checks** (`regression_checks.js`): without `?tv=1` the phone/desktop layout
+  and existing features are untouched
+
+> It needs at least one DLNA speaker/TV discoverable on the LAN (focus has to move across real list
+> rows). With none found it says so and exits with code 3 instead of pretending to pass.
+
 ---
 
 ## Project layout
@@ -178,14 +272,29 @@ SyncDlnaPlay/
 │   ├── DOCKER.zh-CN.md        ← Docker 版完整部署文档（中文，含 iStoreOS 踩坑记录）
 │   └── screenshots/
 ├── Dockerfile                 ┐
-├── docker-compose.yml         ├─ 🐳 Docker 控制点（零第三方依赖，纯 Python 标准库）
-├── app/                       │    server.py / upnp.py / miniweb.py / static web UI
-├── musicfree-bridge/          ┘    在线音源解析桥（可选组件）
-└── android/                       📱 独立运行 Android App（无 Gradle 构建链）
+├── docker-compose.yml         ├─ 🐳 Docker control point (stdlib-only Python)
+├── app/                       │    server.py / upnp.py / miniweb.py / plugins.py / smbtool.py / lyricstore.py
+├── musicfree-bridge/          ┘    optional standalone Node bridge for online sources
+└── android/                       📱 Standalone Android app (no-Gradle toolchain)
     ├── app/  (java + assets/www + res)
+    │   └── assets/www/            ← ⭐ the single front end: the Docker build serves this exact folder
     ├── libs/ (jcifs-ng, bcprov, slf4j-nop)
     ├── build.sh / setup_toolchain.sh
-    └── tools/ (E2E、截图、图标与打包脚本)
+    └── tools/ (E2E, screenshots, icons, packaging)
+```
+
+Docker back-end modules:
+
+```
+app/
+├── server.py        routes + global state (DLNA control point, playback scheduler, all REST endpoints)
+├── upnp.py          SSDP discovery / SOAP / DIDL parsing (stdlib only)
+├── miniweb.py       hand-rolled Flask-compatible subset (routing, Range, JSON)
+├── music_sources.py folder sources (local path / SMB, mounted via the host namespace)
+├── plugins.py       plugin store — add/remove/enable MusicFree sources (port of Android's Plugins.java)
+├── smbtool.py       SMB discovery & browsing (socket scan of 445 + smbclient / smbutil)
+├── lyricstore.py    sibling .lrc lookup and the title-keyed lyric store
+run-macos.sh         (one level up) start the server on macOS with HOST_IP auto-detected
 ```
 
 ---
@@ -240,10 +349,11 @@ explicitly search.
 - [ ] Car / Bluetooth routing as an output target
 - [ ] Per-source lyric providers & translation lines
 - [ ] Optional F-Droid / Play publishing
-- [ ] Docker flavor: queue persistence across restarts
+- [x] ~~Docker flavor: queue persistence across restarts~~ — done 2026-09-14 (the web UI and the Android app now share one front end, which carries queue persistence with it)
 
 PRs are welcome — the frontend is a dependency-free SPA (`android/app/assets/www`), so most UI changes
-need nothing but a text editor.
+need nothing but a text editor — and **one change now lands in both builds** (the Docker image serves
+that same folder).
 
 ## Contributing
 

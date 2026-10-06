@@ -3,7 +3,7 @@
 All notable changes to SyncDlnaPlay are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions are `X.Y` (Android standalone) unless noted.
 
-## [2.22] — 2026-10-06
+## [2.23] — 2026-10-06
 
 ### Fixed
 - **Playback to a speaker that changed its IP now self-heals**: if every speaker rejects the
@@ -14,6 +14,46 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); versions are `X.
   "Cannot connect to 192.168.124.10 — the device may be offline, or on a different network from the phone".
 - **False success fixed**: when the push to the speaker failed, the queue page still toasted
   "playing". The failure is now detected and reported.
+
+## [2.22] — 2026-09-15
+
+### Added: Android TV / remote control support (TV mode)
+The same APK is now **a first-class TV app** as well: installed on Android TV or a TV box it shows up
+in the TV launcher's app row (`LEANBACK_LAUNCHER` entry + its own banner) and boots straight into TV mode.
+
+- **Full remote control**: ▲▼◀▶ spatial navigation, OK to confirm, tiered Back (dismiss keyboard →
+  close panel → return to nav rail → exit). DPAD, Enter, media keys (⏯ ⏭ ⏮) and channel keys
+  (CH± for volume) are translated to front-end semantics by the native layer.
+- **Interactions redesigned for a remote** (more direct than touch):
+  - No dragging sliders: focus one and use ◀ ▶ — it **commits ~0.4 s after you stop**
+  - Dropdowns cycle in place on OK, saving the "open list, then pick" step
+  - Text fields raise the system keyboard on OK; Back dismisses it
+- **10-foot layout**: the root flips to "nav rail left + content right + key-hint bar bottom",
+  with larger type and hit areas and a focus ring readable from the couch.
+- **Focus stability** (the main class of bugs fixed here):
+  - Focus no longer blinks when a list refreshes every second — the loss caused by a re-render is
+    now repaired **synchronously** in the MutationObserver microtask (before paint, so it is
+    invisible) instead of waiting on a 90 ms debounce plus a 700 ms poll.
+  - Pressing a key inside the re-render window no longer **falls back to the first list item**
+    (which looked like "the highlight randomly jumped to the top"); it restores the remembered
+    element signature / index instead.
+  - Hitting the end of a list wraps inside the same region (the rail wraps in the rail) rather
+    than leaping into a different area.
+  - The hint bar no longer rewrites the DOM when its text is unchanged, saving layout work on
+    weak TV boxes.
+- **TV manifest entries**: `android.software.leanback` and `android.hardware.touchscreen` are both
+  declared **not required** (otherwise TVs without a touchscreen get filtered out of install);
+  the application and activity both carry the TV banner.
+- **No features removed**: discovery & multi-room sync, library, online source search and resolution,
+  persistent queue, lyrics, playlist export, source management and SMB browsing all remain.
+  TV mode is a pure shell (`tv.js` + `tv.css`) — **not a line of business logic changed** — so the
+  phone build is unaffected (verified by regression: without `?tv=1` the phone/desktop layout is intact).
+- Toggle it manually in **Settings → TV mode (remote)**, or force it with `?tv=1`.
+
+### Fixed
+- **Focus lost after a list re-render**: replaced nodes used to take focus with them
+  (`activeElement` became `body`), leaving a measured ~150 ms window in which a key press jumped
+  back to the top of the list. Now focus is restored synchronously and re-located by signature.
 
 ## [2.21] — 2026-09-14
 
@@ -140,7 +180,53 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); versions are `X.
 - **Standalone rewrite**: the DLNA control point, library scanner, HTTP server and plugin runtime
   all run inside the app — no home server required.
 
+## Docker control point — 2026-09-14
+
+### Changed: the web UI and the Android standalone app now share **one** front end
+The Docker image used to ship its own desktop-oriented minified page (`app/static/index.html`, 56 KB) which
+had drifted behind the Android app. It now serves the Android zero-dependency SPA (`android/app/assets/www`)
+directly — one codebase for both, so every Android feature is available in the Docker build by construction
+and there is no second UI to maintain.
+
+### Added (endpoints the SPA needs that the Docker back end was missing)
+- **Source management**: `/api/plugins`, `/api/plugins/code`, `/api/plugins/install`, `/api/plugins/remove`,
+  `/api/plugins/toggle` — accepts a URL, raw plugin source, subscription JSON or a share code.
+- **Online playback**: `/api/online/register` + `/stream?sid=` — the browser resolves a direct link with the
+  plugin runtime, the server stores it and proxies the pull with the right Referer/Cookie so the speaker
+  never hits a 403.
+- **Plugin data proxy**: `/__proxy` — works around third-party CORS and the headers browsers forbid JS to set.
+- **SMB**: `/api/smb/scan`, `/api/smb/browse` — scan for hosts with port 445 open, list shares, browse folders.
+- **Lyrics**: `/api/lyric` (sibling `.lrc`), `/api/lyric/byname`, `/api/lyric/save` (title-keyed store).
+- **Playlist export**: `/api/export/playlist` — writes `<DATA_DIR>/playlists/*.m3u`.
+- **Audio by id**: `/media?id=` — local library (`L:`), absolute path (`f:`), or a DLNA ObjectID (resolved, 302).
+
+### Added (modules)
+- `app/plugins.py` — plugin store (port of Android's `Plugins.java`)
+- `app/smbtool.py` — SMB discovery and browsing (socket scan of port 445 + `smbclient`, with a `smbutil` fallback on macOS)
+- `app/lyricstore.py` — local lyrics and the title-keyed lyric store (UTF-8 → GBK fallback)
+
+### Added (env vars)
+`WEB_DIR`, `DATA_DIR`, `PLUGINS_DIR`, `BUILTIN_PLUGINS_DIR`, `STREAM_TTL_MS`
+
+### Fixed
+- **`miniweb` dropped the status code of plain-text responses**: `return "xxx", 404` was served as 200.
+  `(body, status)` / `(body, status, headers)` tuples now keep their status.
+- `music_sources` hard-coded `/data/music_sources.json`, which broke outside a container; it now follows
+  `DATA_DIR` (still `/data` inside the image).
+- The image installs `samba-client` (needed to list share names). Like `tzdata` this is best-effort and
+  will not fail the build.
+
+### Roadmap item completed
+- [x] Persistent queue for the Docker build — queue persistence is a pure front-end feature (localStorage),
+  so unifying the front end delivers it for free.
+
+### Changed (build)
+- `Dockerfile` now copies `android/app/assets/www` and `android/app/assets/plugins` into the image
+  (`/app/web`, `/app/builtin-plugins`), so the build context must include `android/`.
+
 ## Docker flavor
 
-The Docker control point evolves independently (zero-dependency Python, host networking,
-multi-room delay alignment, SMB mounting via the host namespace). See [docs/DOCKER.zh-CN.md](docs/DOCKER.zh-CN.md).
+The Docker control point shares the Android standalone app's front end; the back end is dependency-free
+Python (host networking, multi-room delay alignment, SMB mounting via the host namespace). See
+[docs/DOCKER.zh-CN.md](docs/DOCKER.zh-CN.md).
+

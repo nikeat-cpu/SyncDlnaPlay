@@ -23,6 +23,16 @@
 镜像基于 `python:3.12-alpine` 仅 **59MB**，构建秒级完成，内存占用极低。
 （对比：Flask 方案在 aarch64 上需拉取 7 个包并可能触发 MarkupSafe 编译。）
 
+### 前端与安卓独立版是同一套
+
+镜像直接托管 `android/app/assets/www` 那套零依赖 SPA（拷贝到 `/app/web`），
+`android/app/assets/plugins` 作为内置音源（拷贝到 `/app/builtin-plugins`）。
+因此**两端的界面与功能完全一致**，网页上同样有：多语言、主题、沉浸歌词、队列持久化、
+音源管理（增删启停）、SMB 局域网浏览、歌词落盘、导出 `.m3u` 等。
+
+> 改前端只需改 `android/app/assets/www` 一处，两端同时生效。
+> 构建镜像时上下文必须包含 `android/` 目录。
+
 ## 已验证环境
 
 | 角色 | 设备 | 地址 |
@@ -143,6 +153,11 @@ Web 界面切换到"本地共享目录"即可浏览。
 | `POLL_INTERVAL` | 1.5 | 状态轮询间隔（秒） |
 | `SCAN_INTERVAL` | 300 | 设备重新扫描间隔（秒） |
 | `LOG_LEVEL` | INFO | 日志级别 |
+| `WEB_DIR` | `/app/web` | 网页前端目录（镜像内已内置，一般无需改动） |
+| `DATA_DIR` | `/data` | 数据目录（音源 / 歌词 / 播放列表 / 曲库源配置） |
+| `PLUGINS_DIR` | `<DATA_DIR>/plugins` | 用户自建音源目录 |
+| `BUILTIN_PLUGINS_DIR` | `/app/builtin-plugins` | 内置音源目录（只读） |
+| `STREAM_TTL_MS` | 21600000 | 在线曲目直链的注册有效期（6 小时） |
 
 ## API
 
@@ -160,6 +175,21 @@ Web 界面切换到"本地共享目录"即可浏览。
 | POST | `/api/seek` | 跳转 `{"position":60}` |
 | POST | `/api/resync` | 重新同步所有音响 |
 | POST | `/api/jump` | 跳到队列指定曲目 |
+| GET | `/api/plugins` | 音源清单（内置 + 自建，含启用状态） |
+| GET | `/api/plugins/code` | 所有**启用中**音源的源码（交给浏览器里的插件运行时） |
+| POST | `/api/plugins/install` | 安装音源 `{"url"}` 或 `{"code","name"}`（支持源码 / 订阅 JSON / 分享码） |
+| POST | `/api/plugins/remove` | 删除音源 `{"name"}`（内置的会自动转为停用） |
+| POST | `/api/plugins/toggle` | 启停音源 `{"name","enabled"}` |
+| POST | `/api/smb/scan` | 扫描局域网 445 端口并枚举共享 `{"user","password","guest"}` |
+| POST | `/api/smb/browse` | 列共享 / 浏览目录 `{"host","share","subpath",...}` |
+| GET | `/api/lyric?id=` | 本地曲目的同目录同名 `.lrc` |
+| GET | `/api/lyric/byname?artist=&title=` | 按「歌手 - 歌名」从标题歌词库取词 |
+| POST | `/api/lyric/save` | 歌词落盘 `{"artist","title","lrc"}` |
+| POST | `/api/export/playlist` | 导出 `.m3u` `{"name","content"}` → `<DATA_DIR>/playlists/` |
+| POST | `/api/online/register` | 注册在线直链 `{"url","headers"}` → 返回音响可回拉的 `/stream?sid=` |
+| GET | `/media?id=` | 按曲目 id 取音频（`L:` 本地曲库 / `f:` 绝对路径 / DLNA ObjectID 302） |
+| GET | `/stream?sid=` | 在线音源代理回拉（带 Referer/Cookie，支持 Range） |
+| POST | `/__proxy` | 插件运行时取数代理（绕 CORS 与浏览器禁设的请求头） |
 
 ## 关于双音响同步
 
@@ -184,6 +214,17 @@ DLNA 没有 AirPlay 2 / Chromecast 那种原生多房间同步机制。本系统
 
 **Web 界面打不开**
 - 确认端口未被占用：`netstat -tlnp | grep 5000`
+
+**「扫描局域网」能找到主机但列不出共享名**
+- 列共享名依赖 `smbclient`。镜像已内置（`samba-client`），若你自建精简镜像请确认没被裁掉：
+  `docker exec dlna-speaker smbclient --version`
+- 有些 NAS/SMB 服务器默认不允许匿名枚举，这时界面会提示「手动填写共享名」，直接按住址填即可。
+- 宿主机直接跑（非容器）时同理：`apt install smbclient`（macOS 未装也能列出共享名，会自动回退系统自带 `smbutil`）。
+
+**音源安装后下拉里没有 / 在线搜索没结果**
+- 先看 `curl -s http://<host>:5000/api/plugins/code | head -c 200` 是否返回源码；
+  返回空说明音源被停用了，在网页「音源」里重新启用。
+- 在线搜索依赖第三方音源接口，偶发失败或返回 0 条属正常，换个音源或稍后重试。
 - iStoreOS 防火墙可能需要放行该端口
 
 ## 目录结构

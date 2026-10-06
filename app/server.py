@@ -16,14 +16,24 @@ DLNA 音响控制系统 - Web 服务
   HOST_IP       本机对外 IP（音响用它回拉音频），默认自动探测
   POLL_INTERVAL 状态轮询间隔（秒），默认 1.5
   SCAN_INTERVAL 设备重扫间隔（秒），默认 300
+  WEB_DIR       网页前端目录，默认 android/app/assets/www（与安卓 App 同一套 SPA）
+  DATA_DIR      数据目录（音源 / 歌词 / 播放列表），默认 <项目根>/data
+  PLUGINS_DIR   用户音源目录，默认 <DATA_DIR>/plugins
+  BUILTIN_PLUGINS_DIR  内置音源目录，默认 android/app/assets/plugins
 """
 
 import os
 import sys
+import io
 import json
 import time
+import uuid
+import base64
+import shutil
 import threading
 import logging
+import mimetypes
+import subprocess
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -32,9 +42,14 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import upnp
 import music_sources
+import smbtool
+from plugins import PluginStore
+from lyricstore import LyricStore
 
 # 零依赖 Web 层（Flask 兼容子集），见 miniweb.py
 from miniweb import MiniApp, jsonify, request, send_from_directory, Response
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # ---------------------------------------------------------------- 配置
 
@@ -48,6 +63,32 @@ SCAN_INTERVAL = int(os.environ.get("SCAN_INTERVAL", "300"))
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 STATE_FILE = os.environ.get("STATE_FILE", "").strip()
 
+# 前端：默认直接用安卓 App 那套 SPA（android/app/assets/www），两端共用一份代码。
+# 这样「安卓独立版有的功能」在 Docker 版里天然一致，不再需要各自维护。
+WEB_DIR = (os.environ.get("WEB_DIR", "").strip()
+           or os.path.join(BASE_DIR, "android", "app", "assets", "www"))
+
+# 数据目录（音源 / 歌词 / 播放列表）
+DATA_DIR = (os.environ.get("DATA_DIR", "").strip()
+            or (os.path.dirname(STATE_FILE) if STATE_FILE
+                else os.path.join(BASE_DIR, "data")))
+PLUGINS_DIR = (os.environ.get("PLUGINS_DIR", "").strip()
+               or os.path.join(DATA_DIR, "plugins"))
+BUILTIN_PLUGINS_DIR = (os.environ.get("BUILTIN_PLUGINS_DIR", "").strip()
+                       or os.path.join(BASE_DIR, "android", "app", "assets", "plugins"))
+
+PLAYLIST_DIR = os.path.join(DATA_DIR, "playlists")
+
+# 写回环境变量：music_sources 等子模块据此定位自己的配置文件，
+# 保证本机直接跑时也落在 <项目根>/data 而不是不存在的 /data。
+os.environ.setdefault("DATA_DIR", DATA_DIR)
+
+# 在线曲目注册表：sid -> {url, headers, expires}（前端解析出直链后注册，
+# 再把 /stream?sid=xxx 交给音响回拉）
+STREAM_TTL_MS = int(os.environ.get("STREAM_TTL_MS", str(6 * 3600 * 1000)))
+streams = {}
+streams_lock = threading.Lock()
+
 # MusicFree 在线音源桥接服务（端口 5001，与 dlna-speaker 同机运行）
 # BRIDGE_URL: 本服务访问 bridge 的地址（容器间用 127.0.0.1 即可）
 # BRIDGE_PUBLIC: 回给音响拉流的公开基址；留空则自动用本机 IP:5001
@@ -60,12 +101,15 @@ logging.basicConfig(
 )
 log = logging.getLogger("dlna")
 
-app = MiniApp(__name__, static_folder=os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "static"),
-    static_url_path="/static")
+app = MiniApp(__name__, static_folder=WEB_DIR, static_url_path="/static")
 app.json.ensure_ascii = False
 
 AUDIO_EXTS = set(upnp.MIME_MAP.keys())
+
+# 音源仓库（内置只读 + 用户自建可写）
+plugins = PluginStore(builtin_dir=BUILTIN_PLUGINS_DIR, plugins_dir=PLUGINS_DIR)
+# 标题歌词库
+lyrics = LyricStore(data_dir=DATA_DIR)
 
 
 # ---------------------------------------------------------------- 工具
@@ -907,7 +951,50 @@ def apply_active_source(rescan=True):
 
 @app.route("/")
 def index():
-    return send_from_directory(app.static_folder, "index.html")
+    return send_from_directory(WEB_DIR, "index.html", conditional=True)
+
+
+def _resolve_dlna_url(object_id):
+    """把媒体服务器的曲目 ObjectID 解析成真实资源地址（供 /media?id= 用）"""
+    for ms in dm.all_servers():
+        try:
+            item = ms.browse_metadata(object_id)
+        except Exception:  # noqa: BLE001
+            item = None
+        if item and item.get("url"):
+            return item["url"]
+    return ""
+
+
+@app.route("/media")
+def media_by_id():
+    """
+    按曲目 id 取音频（对应安卓版 Api.media）。
+    前端播放本机音乐、导出 m3u 时都用这个地址：
+      L:<相对路径>  本地曲库
+      f:<绝对路径>  任意本地文件
+      其它          媒体服务器的 ObjectID → 解析出资源地址后 302
+    """
+    tid = request.args.get("id", "")
+    if not tid:
+        return jsonify({"ok": False, "msg": "缺少 id"}), 400
+
+    if tid.startswith("L:"):
+        if not library.enabled():
+            return "MUSIC_DIR 未配置", 404
+        return send_from_directory(library.root, tid[2:], conditional=True)
+
+    if tid.startswith("f:"):
+        p = tid[2:]
+        d, f = os.path.split(p)
+        if not d or not os.path.isfile(p):
+            return "Not Found", 404
+        return send_from_directory(d, f, conditional=True)
+
+    url = _resolve_dlna_url(tid)
+    if url:
+        return Response("", 302, "text/plain", {"Location": url})
+    return jsonify({"ok": False, "msg": "找不到该曲目"}), 404
 
 
 @app.route("/media/<path:filename>")
@@ -1531,6 +1618,318 @@ def api_library_rescan():
     library.scan()
     return jsonify({"ok": True, "last_scan": library.last_scan,
                     "dirs": len(library.index)})
+
+
+# ================================================================
+#  与安卓独立版对齐的接口（前端 SPA 需要，Docker 版原先缺失）
+#  契约以 android/app/java/com/dlna/speaker/Api.java 为准
+# ================================================================
+
+# ---------------------------------------------------- 音源（MusicFree 插件）
+@app.route("/api/plugins")
+def api_plugins():
+    """列出全部音源（内置在前，自建在后）"""
+    return jsonify({"ok": True, "list": plugins.list(), "dir": plugins.dir_path()})
+
+
+@app.route("/api/plugins/code")
+def api_plugins_code():
+    """取出所有启用中的音源源码，交给浏览器里的插件运行时加载"""
+    return jsonify({"ok": True, "list": plugins.load_enabled()})
+
+
+@app.route("/api/plugins/install", methods=["POST"])
+def api_plugins_install():
+    data = request.get_json(force=True, silent=True) or {}
+    return jsonify(plugins.install(url=data.get("url", ""),
+                                   code=data.get("code", ""),
+                                   name_hint=data.get("name", ""),
+                                   depth=0))
+
+
+@app.route("/api/plugins/remove", methods=["POST"])
+def api_plugins_remove():
+    data = request.get_json(force=True, silent=True) or {}
+    return jsonify(plugins.remove(data.get("name", "")))
+
+
+@app.route("/api/plugins/toggle", methods=["POST"])
+def api_plugins_toggle():
+    data = request.get_json(force=True, silent=True) or {}
+    enabled = data.get("enabled", True)
+    if isinstance(enabled, str):
+        enabled = enabled.strip().lower() not in ("0", "false", "no", "")
+    return jsonify(plugins.toggle(data.get("name", ""), bool(enabled)))
+
+
+# ------------------------------------------------------------------ SMB
+@app.route("/api/smb/scan", methods=["POST"])
+def api_smb_scan():
+    """扫描局域网里开着 445 的机器，并尽量枚举共享名"""
+    data = request.get_json(force=True, silent=True) or {}
+    guest = data.get("guest", False)
+    if isinstance(guest, str):
+        guest = guest.strip().lower() not in ("0", "false", "no", "")
+    return jsonify(smbtool.discover(
+        user=data.get("user", ""), password=data.get("password", ""),
+        guest=bool(guest), budget_ms=12000,
+        extra_ips=[host_ip()]))
+
+
+@app.route("/api/smb/browse", methods=["POST"])
+def api_smb_browse():
+    """share 为空 → 列出服务器上的共享；否则列出该共享下的子目录"""
+    data = request.get_json(force=True, silent=True) or {}
+    host = (data.get("host") or "").strip()
+    share = (data.get("share") or "").strip()
+    guest = data.get("guest", False)
+    if isinstance(guest, str):
+        guest = guest.strip().lower() not in ("0", "false", "no", "")
+    if not host:
+        return jsonify({"ok": False, "error": "请先填写主机名或 IP"})
+    if not share:
+        return jsonify(smbtool.shares(host, data.get("user", ""),
+                                      data.get("password", ""), bool(guest)))
+    return jsonify(smbtool.browse_dir(host, share,
+                                      subpath=data.get("subpath", ""),
+                                      user=data.get("user", ""),
+                                      password=data.get("password", ""),
+                                      guest=bool(guest)))
+
+
+# ------------------------------------------------------------------ 歌词
+def _local_path_of(track_id):
+    """把曲目 id 解析成本地文件路径（找同名 .lrc 用）"""
+    if not track_id:
+        return ""
+    if track_id.startswith("L:"):
+        rel = track_id[2:]
+        if library.enabled():
+            p = os.path.join(library.root, rel)
+            if os.path.isfile(p):
+                return p
+        return ""
+    if track_id.startswith("f:"):
+        p = track_id[2:]
+        return p if os.path.isfile(p) else ""
+    return ""
+
+
+@app.route("/api/lyric")
+def api_lyric():
+    """本地歌词：找同目录同名的 .lrc"""
+    lrc = ""
+    try:
+        lrc = lyrics.find_for_path(_local_path_of(request.args.get("id", "")))
+    except Exception:  # noqa: BLE001
+        lrc = ""
+    return jsonify({"ok": True, "lrc": lrc or ""})
+
+
+@app.route("/api/lyric/byname")
+def api_lyric_byname():
+    """标题歌词库：按「歌手 - 歌名」检索"""
+    lrc = ""
+    try:
+        lrc = lyrics.find_by_name(request.args.get("artist", ""),
+                                  request.args.get("title", ""))
+    except Exception:  # noqa: BLE001
+        lrc = ""
+    return jsonify({"ok": True, "lrc": lrc or ""})
+
+
+@app.route("/api/lyric/save", methods=["POST"])
+def api_lyric_save():
+    data = request.get_json(force=True, silent=True) or {}
+    return jsonify(lyrics.save(data.get("artist", ""), data.get("title", ""),
+                               data.get("lrc", "")))
+
+
+# -------------------------------------------------------- 播放列表导出
+@app.route("/api/export/playlist", methods=["POST"])
+def api_export_playlist():
+    """把前端生成的 .m3u 文本落盘到 <DATA_DIR>/playlists/"""
+    data = request.get_json(force=True, silent=True) or {}
+    name = data.get("name") or "playlist"
+    content = data.get("content") or ""
+    if not content.strip():
+        return jsonify({"ok": False, "msg": "空内容"})
+    try:
+        os.makedirs(PLAYLIST_DIR, exist_ok=True)
+        safe = "".join(c if c not in '\\/:*?"<>|' else "_"
+                       for c in str(name)).strip() or "playlist"
+        path = os.path.join(PLAYLIST_DIR, safe + ".m3u")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(content)
+        return jsonify({"ok": True, "file": path})
+    except OSError as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
+# -------------------------------------------- 在线音源：注册直链 + 代理回拉
+def _prune_streams():
+    now = time.time() * 1000
+    with streams_lock:
+        for sid in [s for s, e in streams.items() if e.get("expires", 0) < now]:
+            streams.pop(sid, None)
+
+
+@app.route("/api/online/register", methods=["POST"])
+def api_online_register():
+    """
+    前端在浏览器里用插件解析出在线音源的**直链**后交给这里：
+    服务端记住它，并回一个音响可以直接回拉的 /stream?sid= 地址。
+    （浏览器拿到的是带 Referer/Cookie 限制的临时链，音响自己去拉往往 403）
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    url = (data.get("url") or "").strip()
+    if not url:
+        return jsonify({"ok": False, "msg": "缺少 url"}), 400
+    _prune_streams()
+    sid = uuid.uuid4().hex[:16]
+    with streams_lock:
+        streams[sid] = {
+            "url": url,
+            "headers": data.get("headers") or {},
+            "expires": time.time() * 1000 + STREAM_TTL_MS,
+        }
+    base = f"http://{host_ip()}:{HTTP_PORT}" if host_ip() else ""
+    return jsonify({"ok": True, "sid": sid, "url": f"{base}/stream?sid={sid}"})
+
+
+def _build_stream_headers(entry):
+    h = {}
+    for k, v in (entry.get("headers") or {}).items():
+        if v is not None:
+            h[str(k)] = str(v)
+    return h
+
+
+def _proxy_audio(url, extra_headers, forward_range):
+    """拉取上游音频（支持 Range 透传），返回 (Response, None) 或 (None, err)"""
+    headers = dict(extra_headers or {})
+    if forward_range:
+        headers["Range"] = forward_range
+    headers.setdefault("User-Agent", "Mozilla/5.0 (compatible; dlna-speaker/2.21)")
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=30) as r:
+            status = getattr(r, "status", 200) or 200
+            data = r.read()
+            out = {
+                "Content-Type": r.headers.get("Content-Type")
+                                or mimetypes.guess_type(url)[0]
+                                or "audio/mpeg",
+                "Accept-Ranges": r.headers.get("Accept-Ranges", "bytes"),
+                "Content-Length": str(len(data)),
+            }
+            for k in ("Content-Range", "Cache-Control", "Last-Modified", "ETag"):
+                v = r.headers.get(k)
+                if v:
+                    out[k] = v
+            if status == 206 and "Content-Range" not in out:
+                out["Content-Range"] = r.headers.get("Content-Range", "")
+            return Response(data, status, out["Content-Type"], out), None
+    except Exception as e:  # noqa: BLE001
+        return None, f"{type(e).__name__}: {e}"
+
+
+@app.route("/stream")
+def stream():
+    """音响回拉在线音源的代理入口（对应安卓版 Api.stream）"""
+    sid = request.args.get("sid", "")
+    with streams_lock:
+        entry = streams.get(sid)
+    if not entry:
+        return "无效的播放会话", 404
+    if entry.get("expires", 0) < time.time() * 1000:
+        with streams_lock:
+            streams.pop(sid, None)
+        return "播放会话已过期", 410
+
+    rng = request.headers.get("Range")
+    resp, err = _proxy_audio(entry["url"], _build_stream_headers(entry), rng)
+    if resp is None:
+        log.warning(f"在线流代理失败 sid={sid}: {err}")
+        return f"上游取流失败：{err}", 502
+    return resp
+
+
+@app.route("/__proxy", methods=["POST"])
+def js_proxy():
+    """
+    浏览器插件运行时的取数代理（对应安卓版 Api.proxy）。
+    音源接口不带 CORS 头，且需要 Referer/Cookie 这类浏览器禁止 JS 设置的头，
+    必须由服务端代发。请求/响应都用 base64 传 body。
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    url = (data.get("url") or "").strip()
+    if not url:
+        return jsonify({"transportError": "缺少 url"}), 400
+
+    method = (data.get("method") or "GET").upper()
+    try:
+        timeout = max(5, min(int(data.get("timeout") or 20000) // 1000, 120))
+    except (TypeError, ValueError):
+        timeout = 20
+
+    headers = {}
+    for k, v in (data.get("headers") or {}).items():
+        if v is not None:
+            headers[str(k)] = str(v)
+    headers.setdefault("User-Agent", "Mozilla/5.0 (compatible; dlna-speaker/2.21)")
+
+    body = None
+    b64 = data.get("body")
+    if b64:
+        try:
+            body = base64.b64decode(b64)
+        except (ValueError, TypeError):
+            body = None
+
+    try:
+        req = urllib.request.Request(url, data=body, headers=headers, method=method)
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            raw = r.read(8 * 1024 * 1024)
+            truncated = len(raw) >= 8 * 1024 * 1024
+            return jsonify({
+                "status": getattr(r, "status", 200) or 200,
+                "statusText": getattr(r, "reason", "") or "",
+                "headers": {k: v for k, v in r.headers.items()},
+                "body": base64.b64encode(raw).decode("ascii"),
+                "finalUrl": r.geturl(),
+                "truncated": truncated,
+            })
+    except urllib.error.HTTPError as e:
+        raw = e.read(8 * 1024 * 1024) if e.fp else b""
+        return jsonify({
+            "status": e.code,
+            "statusText": e.reason or "",
+            "headers": {k: v for k, v in (e.headers or {}).items()},
+            "body": base64.b64encode(raw).decode("ascii"),
+            "finalUrl": url,
+            "truncated": False,
+        })
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"transportError": f"{type(e).__name__}: {e}"})
+
+
+# ------------------------------------------------------------ 静态资源
+# 必须**最后**注册：/api/** 各路由先匹配，剩下的才当静态文件。
+
+@app.route("/index.html")
+def web_index_html():
+    return send_from_directory(WEB_DIR, "index.html", conditional=True)
+
+
+@app.route("/<path:filename>")
+def web_assets(filename):
+    if filename.startswith("api/"):
+        return jsonify({"ok": False, "msg": f"未知接口: /{filename}"}), 404
+    head = filename.split("/", 1)[0]
+    if head in ("media", "stream", "__proxy"):
+        return Response("Not Found", 404)
+    return send_from_directory(WEB_DIR, filename, conditional=True)
 
 
 # ---------------------------------------------------------------- 启动

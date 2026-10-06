@@ -3,7 +3,7 @@
 SyncDlnaPlay 的所有重要变更记录于此。
 格式参考 [Keep a Changelog](https://keepachangelog.com/)；版本号 `X.Y` 指安卓独立版（除非另有说明）。
 
-## [2.22] — 2026-10-06
+## [2.23] — 2026-10-06
 
 ### 修复
 - **音响换 IP 后自动自愈**：当所有音响都拒绝 SetAVTransportURI 指令（典型场景：路由器重新分配地址、
@@ -11,6 +11,38 @@ SyncDlnaPlay 的所有重要变更记录于此。
 - **报错人话化**：不再直接弹 Java 原始异常——`java.net.ConnectException: Failed to connect to
   /192.168.124.10:49153` 现在显示为「无法连接到 192.168.124.10 —— 设备可能离线，或与手机不在同一网络」。
 - **修复假成功**：推送到音响失败时，播放列表页此前仍会提示「已开始播放」；现在会正确识别并报错。
+
+## [2.22] — 2026-09-15
+
+### 新增：安卓电视 / 遥控器支持（TV 模式）
+同一个 APK 既能在手机上用，也**是一个合法的电视应用**：装上后出现在 Android TV 首页的应用行
+（`LEANBACK_LAUNCHER` 入口 + 专属横幅），点开自动进入电视模式。
+
+- **遥控器全接管**：▲▼◀▶ 空间导航、OK 确认、返回键分级退回（收键盘 → 关弹层 → 回导航栏 → 退出应用）。
+  手机/盒子上的 DPAD、确认、媒体键（⏯ ⏭ ⏮）、频道键（CH± 调音量）都由原生层转成前端可识别的语义。
+- **为遥控器重新设计的交互**（比触屏更直白）：
+  - 滑条不再拖拽：停在滑条上直接 ◀ ▶ 调值，**停手约 0.4 秒自动提交**
+  - 下拉框 OK 直接循环切换选项，少一步「弹出列表再选」
+  - 输入框 OK 主动唤起系统输入法，返回键收起
+- **10 尺版式**：根布局翻成「左导航栏 + 右内容区 + 底下按键提示条」，字号与点击区整体放大，
+  焦点环在远处也清晰可辨。
+- **焦点稳定性**（本次重点修的一类问题）：
+  - 列表每秒刷新时焦点不再闪烁 —— 重绘导致的焦点丢失改为在 MutationObserver 微任务里
+    **同步补回**（绘制之前完成，肉眼不可见），而不是等 90ms 防抖 + 700ms 轮询。
+  - 重绘空窗期按键**不再兜底跳到列表第一项**（遥控器上表现为「莫名弹回顶部」），
+    改为按记住的元素签名 / 下标找回原位置。
+  - 走到列表尽头在同一区域内绕回（导航栏绕导航栏），不会蹿到别的区块。
+  - 提示条文案不变时不重写 DOM，减少无谓的布局计算（电视盒子 CPU 弱）。
+- **电视适配清单项**：`android.software.leanback` 与 `android.hardware.touchscreen` 均声明为
+  **非必需**（否则没有触摸屏的电视会被过滤掉安装）；应用与 Activity 都挂上 TV 横幅。
+- **功能零删减**：设备发现与多房间同步、曲库、在线音源搜索解析、队列持久化、歌词、导出播放列表、
+  音源管理、SMB 浏览全部保留。电视模式是纯「外壳层」（`tv.js` + `tv.css`），**业务逻辑一行未改**，
+  所以手机版行为完全不受影响（已用回归测试验证：不带 `?tv=1` 时仍走原手机/桌面版式）。
+- 手动开关在「设置 → 电视模式（遥控器）」，也可用 `?tv=1` 强制开启。
+
+### 修复
+- **列表重绘后焦点丢失**：原先被替换掉的节点会把焦点一起带走（`activeElement` 变成 `body`），
+  实测有约 150ms 空窗，期间按键会跳回列表顶部。现在改为同步补焦点 + 按签名找回位置。
 
 ## [2.21] — 2026-09-14
 
@@ -25,6 +57,48 @@ SyncDlnaPlay 的所有重要变更记录于此。
 - **前 3 个最近列表快速切换**：播放列表页顶部直接显示最近 3 个已保存列表的一键 chip；「📂 我的」打开管理器，可载入 / 重命名 / 删除。
 - **曲库列表导出**：本地曲库页可把当前列表导出为 `.m3u` 文件，保存到应用私有 `playlists/` 目录，不会在媒体库里变成幽灵曲目。
 
+## Docker 控制端 — 2026-09-14
+
+### 变更：网页与安卓独立版**合并为同一套前端**
+Docker 版原先是一页单独的桌面版混淆页面（`app/static/index.html`，56KB），功能长期落后于安卓版。
+现在改为**直接托管安卓那套零依赖 SPA**（`android/app/assets/www`）——两端共用一份代码，
+安卓端有的功能在 Docker 版天然一致，以后也不再需要分别维护。
+
+### 新增（补齐 SPA 需要、Docker 端原先缺失的接口）
+- **音源管理**：`/api/plugins`、`/api/plugins/code`、`/api/plugins/install`、`/api/plugins/remove`、`/api/plugins/toggle`
+  —— 支持网址 / 插件源码 / 订阅 JSON / 分享码四种添加方式，内置音源可停用、自建音源可增删。
+- **在线音源取流**：`/api/online/register` + `/stream?sid=` —— 浏览器里用插件解析出直链后交给服务端，
+  由服务端带 Referer/Cookie 代理回拉，音响拿到的地址才不会 403。
+- **插件取数代理**：`/__proxy` —— 绕过第三方音源接口的 CORS 与其要求、浏览器禁止 JS 设置的请求头。
+- **SMB 局域网**：`/api/smb/scan`、`/api/smb/browse` —— 扫描开着 445 的机器、列共享、逐级浏览子目录。
+- **歌词**：`/api/lyric`（同目录同名 `.lrc`）、`/api/lyric/byname`、`/api/lyric/save`（标题歌词库）。
+- **播放列表导出**：`/api/export/playlist` —— 落盘为 `<DATA_DIR>/playlists/*.m3u`。
+- **按 id 取音频**：`/media?id=` —— 支持本地曲库 `L:`、绝对路径 `f:`，以及媒体服务器 ObjectID（解析后 302）。
+
+### 新增模块
+- `app/plugins.py` —— 音源仓库（对应安卓的 `Plugins.java`）
+- `app/smbtool.py` —— SMB 发现与浏览（纯 socket 扫 445 + `smbclient`，macOS 自动回退 `smbutil`）
+- `app/lyricstore.py` —— 本地歌词与标题歌词库（UTF-8 → GBK 自动回退）
+
+### 新增环境变量
+`WEB_DIR`、`DATA_DIR`、`PLUGINS_DIR`、`BUILTIN_PLUGINS_DIR`、`STREAM_TTL_MS`
+
+### 修复
+- **`miniweb` 会丢掉纯文本响应的状态码**：`return "xxx", 404` 这类返回的状态一直是 200。
+  现在 `(body, status)` / `(body, status, headers)` 元组的状态码会被正确沿用。
+- `music_sources` 的配置文件路径原先写死 `/data/music_sources.json`，非容器环境会报错；
+  现在跟随 `DATA_DIR`（容器内仍是 `/data`）。
+- Docker 镜像新增 `samba-client`（列共享名用），与 `tzdata` 一样是「尽力安装」，缺了不阻断构建。
+
+### 顺带完成的 Roadmap 项
+- [x] Docker 版队列持久化 —— 队列持久化本就是纯前端功能（localStorage），
+      前端统一之后 Docker 版自动获得。
+
+### 变更（构建）
+- `Dockerfile` 现在会把 `android/app/assets/www` 与 `android/app/assets/plugins`
+  一并打进镜像（`/app/web`、`/app/builtin-plugins`），因此构建上下文需要包含 `android/`。
+
 ## Docker 版本
 
-Docker 控制端独立演进（零依赖 Python、host 网络、多房间延迟对齐、通过主机 namespace 挂载 SMB）。详见 [docs/DOCKER.zh-CN.md](docs/DOCKER.zh-CN.md)。
+Docker 控制端与安卓独立版**共用同一套前端**；后端为零依赖 Python（host 网络、多房间延迟对齐、
+通过主机 namespace 挂载 SMB）。详见 [docs/DOCKER.zh-CN.md](docs/DOCKER.zh-CN.md)。

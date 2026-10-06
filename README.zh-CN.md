@@ -75,6 +75,29 @@
 ### 🌍 中英双语
 - 跟随系统语言自动切换，也可在「设置」里手动切换
 
+### 📺 安卓电视 / 遥控器（TV 版）
+- **同一个 APK**，电视和手机通用：装到 Android TV / 机顶盒上会被识别成电视应用，
+  出现在电视桌面的应用行里（带专属横幅），**不会**因为「电视没有触摸屏」而被应用商店/系统拦下
+- 开机自动进入电视模式；也可以在「设置 → 电视模式（遥控器）」手动开关，或加 `?tv=1` 强制
+- **全程只用遥控器**，不用鼠标、不用触控：
+
+  | 按键 | 作用 |
+  |---|---|
+  | ▲ ▼ ◀ ▶ | 在可见控件之间移动（空间导航，不用猜顺序） |
+  | OK / 确定 | 确认；输入框弹出系统键盘，下拉框直接循环切换 |
+  | ◀ ▶（停在滑条上） | 直接调值，**停手约 0.4 秒自动生效**，不用拖拽 |
+  | 返回 | 一级一级往上退：收键盘 → 关弹层 → 回到导航栏 → 再按退出应用 |
+  | ⏯ ⏭ ⏮ | 播放 / 暂停 / 下一首 / 上一首 |
+  | CH+ / CH− | 音量加减 |
+
+- 交互比手机版更简单：左侧一排标签就是全部入口，右侧只放内容，**没有需要长按或拖拽的操作**
+- 聚焦环清晰可见（10 尺外也看得清），**列表每秒刷新也不会丢焦点**——
+  音响上下线时焦点稳稳待在原来那一行，不会莫名弹回顶部
+- 上下走到头会在**同一区域**内绕回（导航栏里绕导航栏，列表里绕列表），不会突然跳到别的区块
+- 底部常驻一行按键提示，焦点换位置时提示跟着变
+- **功能一个不少**：设备发现/多房间同步、曲库、在线音源搜索解析、队列持久化、歌词、
+  导出播放列表、音源管理、SMB 浏览，和手机版完全一致（电视模式只是一层外壳，业务逻辑零改动）
+
 ---
 
 ## 安装
@@ -89,8 +112,24 @@
 
 | APK | 语言表现 |
 |---|---|
-| `SyncDlnaPlay-standalone-v2.12.apk` | 跟随手机系统语言（中文 / English） |
-| `SyncDlnaPlay-standalone-v2.12-en.apk` | 不论手机是什么语言，默认**英文**启动（设置页仍可切回中文） |
+| `SyncDlnaPlay-standalone-v2.22.apk` | 跟随手机系统语言（中文 / English） |
+| `SyncDlnaPlay-standalone-v2.22-en.apk` | 不论手机是什么语言，默认**英文**启动（设置页仍可切回中文） |
+
+### Android TV / 电视盒子
+
+**同一个 APK** 就是电视版，不用另找安装包：
+
+```bash
+adb connect <电视IP>:5555      # 或者用 U 盘 / 电视上的文件管理器直接装
+adb install -r SyncDlnaPlay-standalone-v2.22.apk
+```
+
+- 装完会出现在 **Android TV 首页的应用行**里（带专属横幅，走 `LEANBACK_LAUNCHER` 入口），
+  点开直接就是电视模式
+- 清单里把 `android.hardware.touchscreen` 声明为「非必需」，所以那些不上报触摸屏的
+  电视 / 盒子也能正常安装
+- 手机上装同一个包行为不变：电视模式默认关闭，要用才在设置里开
+  （按键对照表见 [功能特性 → 安卓电视 / 遥控器](#-安卓电视--遥控器tv-版)）
 
 ### Docker 控制点
 
@@ -108,32 +147,46 @@ docker compose up -d --build      # 网页控制台 http://<host>:5000
 镜像基于 `python:3.12-alpine`，Web 层是自研的 Flask 兼容子集，**零第三方依赖**——
 **仅 59MB**，秒级构建、内存占用极低。音频流不经过容器：音响直接向音乐源拉流。
 
+**网页与安卓独立版是同一套前端。** 镜像里托管的就是 `android/app/assets/www` 那套零依赖 SPA，
+所以两端的界面与功能始终一致（多语言、主题、沉浸歌词、队列持久化、音源管理、SMB 浏览……全都有），
+不存在「手机上有、网页上没有」的差异。后端按 SPA 的接口契约补齐，改动前端只需动一处。
+
+> 镜像内已装 `samba-client`，用于「扫描局域网 / 列共享名 / 浏览共享目录」。
+> 若在宿主机直接跑（非容器），则需要系统有 `smbclient`；macOS 上没装也能列共享名（自动回退系统自带 `smbutil`）。
+
+> 本机调试：`./run-macos.sh` 会起服务、自动探测本机 IP 并喂给 `HOST_IP`，然后打开 `http://<本机IP>:5000`。
+
+数据（自建音源 / 歌词库 / 导出的播放列表 / 曲库源配置）统一放在 `DATA_DIR`，容器内为 `/data`，
+即 `docker-compose.yml` 里已挂载的持久化分区。
+
 ---
 
 ## 工作原理
 
 ```
 Android 独立版                             Docker 版
-┌─────────────────────────────┐          ┌──────────────────┐
-│ WebView UI（SPA，中英双语）   │          │  Web UI (:5000)  │
-│ ├─ 内置 HTTP 服务  :8765     │          │  UPnP 控制点      │
-│ ├─ DLNA 控制点              │  SSDP    │  （纯标准库）      │
-│ ├─ SMB 客户端 (jcifs-ng)    │ ───────► └────────┬─────────┘
-│ ├─ MediaStore 曲库          │                   │ SetURI + Play
-│ └─ MusicFree 插件运行时      │                   ▼
-└──────────────┬──────────────┘          ┌──────────────────┐
-               │ SetURI + Play           │    DLNA 音响      │
-               ▼                         │   （负责发声）     │
-        ┌──────────────────┐             └────────┬─────────┘
-        │    DLNA 音响      │                      │ HTTP GET
-        │   （负责发声）     │ ◄────────────────────┘
-        └────────┬─────────┘        音响直接从音乐源拉取音频流，
-                 │ HTTP GET         控制端零带宽消耗
-                 ▼
-      手机存储 / SMB / 在线 CDN
+┌─────────────────────────────┐          ┌──────────────────────────┐
+│ WebView UI（SPA，中英双语）   │          │  同一套 SPA（浏览器里跑）  │
+│ ├─ 内置 HTTP 服务  :8765     │          │  ├─ Python HTTP :5000    │
+│ ├─ DLNA 控制点              │  SSDP    │  ├─ DLNA 控制点（纯标准库）│
+│ ├─ SMB 客户端 (jcifs-ng)    │ ───────► │  ├─ SMB 客户端 (smbclient)│
+│ ├─ MediaStore 曲库          │          │  ├─ 本地/挂载曲库扫描      │
+│ └─ MusicFree 插件运行时      │          │  └─ /__proxy 取数代理     │
+└──────────────┬──────────────┘          └────────────┬─────────────┘
+               │ SetURI + Play                        │ SetURI + Play
+               ▼                                      ▼
+        ┌──────────────────┐                  ┌──────────────────┐
+        │    DLNA 音响      │                  │    DLNA 音响      │
+        │   （负责发声）     │                  │   （负责发声）     │
+        └────────┬─────────┘                  └────────┬─────────┘
+                 │ HTTP GET                            │ HTTP GET
+                 ▼                                     ▼
+      手机存储 / SMB / 在线 CDN            本地/挂载目录 · /stream?sid= 代理
 ```
 
 控制端只负责「发号施令」，**音频流从音乐源直达音响**，手机与容器几乎零负载。
+两端的差别只在「前端跑在哪」：安卓版跑在 WebView 里，Docker 版跑在浏览器里；
+插件运行时（`plugins-runtime.js`）本身就是纯 JS，浏览器里同样能跑。
 
 ---
 
@@ -151,8 +204,33 @@ ANDROID_TOOLCHAIN=/path/to/android-toolchain bash build.sh
 # 产物：android/build/SyncDlnaPlay-standalone-vX.Y.apk
 ```
 
+macOS 上换成 `build-macos.sh`（额外的 patch 用于适配 BSD 工具链与 Apple 自带 JDK 的路径差异）：
+
+```bash
+cd android
+ANDROID_TOOLCHAIN=$HOME/android-toolchain PY=python3 bash build-macos.sh
+```
+
 仓库自带桌面回归：`bash android/tools/run_e2e.sh` 会在本机 8765 起真实 Java 后端，
 用无头 Chromium 驱动真实前端跑 **32 项端到端检查**（在线搜索、流解析、Range、歌词解析、全部面板）。
+
+电视模式另有两组遥控器测试，收在 `android/tools/tvtest/`，一条命令跑完：
+
+```bash
+bash android/tools/tvtest/run.sh          # 两组都跑
+bash android/tools/tvtest/run.sh --nav    # 只跑遥控器导航断言
+```
+
+脚本会自己起一个空闲端口的服务端（`DATA_DIR` 落临时目录，不碰仓库），然后用无头 Chrome
+经 CDP 驱动真实前端，全程只调 `window.__tvKey()` —— 也就是原生 `MainActivity` 真正调用的入口，
+和遥控器按键走完全相同的路径：
+
+- **33 项电视导航断言**（`nav_checks.js`，14 个场景）：初始焦点落位、四向空间导航、导航栏进出与栏内循环、
+  弹层作用域切换、滑条 ◀▶ 调值、媒体键接管、**连续 4.5s 监测重绘焦点不丢**、返回键分级、整表重绘不跳顶
+- **11 项非电视模式回归**（`regression_checks.js`）：确认不带 `?tv=1` 时手机 / 桌面版式与原有功能不受影响
+
+> 需要局部网里至少有一台能被扫到的 DLNA 音响 / 电视（焦点要在真实列表行里移动）；
+> 扫不到时会明确提示并以退出码 3 结束，不会假装通过。
 
 ---
 
@@ -166,13 +244,28 @@ SyncDlnaPlay/
 │   └── screenshots/
 ├── Dockerfile                 ┐
 ├── docker-compose.yml         ├─ 🐳 Docker 控制点（零第三方依赖）
-├── app/                       │    server.py / upnp.py / miniweb.py / static 网页
-├── musicfree-bridge/          ┘    在线音源解析桥（可选）
+├── app/                       │    server.py / upnp.py / miniweb.py
+├── musicfree-bridge/          ┘    在线音源解析桥（可选，独立 Node 方案）
 └── android/                       📱 独立版 App（无 Gradle 构建链）
     ├── app/  (java + assets/www + res)
+    │   └── assets/www/            ← ⭐ 网页前端单一源：Docker 版直接托管这一份
     ├── libs/ (jcifs-ng, bcprov, slf4j-nop)
     ├── build.sh / setup_toolchain.sh
     └── tools/ (E2E、截图、图标与打包脚本)
+```
+
+Docker 控制点的后端模块：
+
+```
+app/
+├── server.py        路由与全局状态（DLNA 控制点 + 播放调度 + 全部 REST 接口）
+├── upnp.py          SSDP 发现 / SOAP 调用 / DIDL 解析（east 零依赖）
+├── miniweb.py       自研 Flask 兼容子集（路由、Range、JSON）
+├── music_sources.py 曲库目录源（本地路径 / SMB，经宿主 namespace 挂载）
+├── plugins.py       音源仓库（MusicFree 插件增删启停，对应安卓的 Plugins.java）
+├── smbtool.py       SMB 发现与浏览（socket 扫 445 + smbclient / smbutil）
+├── lyricstore.py    本地 .lrc 与标题歌词库
+└── run-macos.sh     （在上一级目录）本机 macOS 启动脚本
 ```
 
 ---
@@ -224,9 +317,10 @@ App 只在使用时工作；投屏播放时用常驻通知防止系统杀后台�
 - [ ] 车机 / 蓝牙输出目标
 - [ ] 歌词翻译行
 - [ ] F-Droid / Play 上架评估
-- [ ] Docker 版队列持久化
+- [x] ~~Docker 版队列持久化~~ —— 已于 2026-09-14 完成（网页与安卓合并为同一套前端，队列持久化随之生效）
 
-欢迎 PR —— 前端是零依赖 SPA（`android/app/assets/www`），改界面只需要一个文本编辑器。
+欢迎 PR —— 前端是零依赖 SPA（`android/app/assets/www`），改界面只需要一个文本编辑器；
+**改一次两端同时生效**（Docker 版直接托管这一份）。
 
 ## 参与贡献
 
