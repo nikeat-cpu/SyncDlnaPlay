@@ -12,6 +12,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import android.media.MediaMetadataRetriever;
 
 /**
  * HTTP API 层
@@ -313,6 +314,19 @@ public final class Api implements HttpSrv.Handler {
             List<Object> out = new ArrayList<Object>();
             for (Map<String, Object> t : library.search(req.param("q", ""))) out.add(player.publicTrack(t));
             res.json(Json.map("ok", true, "items", out, "total", out.size()));
+            return;
+        }
+
+        /* 音频文件属性：采样率 / 码率 / 声道 / 格式 / 时长 / 文件大小。
+           仅本机曲库（source=local 且 path 是真实文件）能读到编码属性；
+           SMB 媒体服务器 / 在线来源没有本地文件，优雅降级为只返回曲目自带信息。 */
+        if (path.equals("/api/meta")) {
+            metaApi(req, res);
+            return;
+        }
+        /* 批量版本：一次拿多首的本机编码属性，给列表页内联徽标用，避免逐行发请求 */
+        if (path.equals("/api/metas")) {
+            metasApi(req, res);
             return;
         }
 
@@ -737,6 +751,114 @@ public final class Api implements HttpSrv.Handler {
                 }
             }
         };
+    }
+
+    /** 音频文件属性：采样率 / 码率 / 声道 / 格式 / 时长 / 文件大小。 */
+    private void metaApi(HttpSrv.Req req, HttpSrv.Res res) throws Exception {
+        String id = req.param("id", "");
+        if (id.isEmpty()) { res.json(400, Json.map("ok", false, "msg", "缺少 id")); return; }
+        Map<String, Object> m = metaFor(id);
+        if (m == null) { res.json(404, Json.map("ok", false, "msg", "找不到该曲目")); return; }
+        res.json(m);
+    }
+
+    private void metasApi(HttpSrv.Req req, HttpSrv.Res res) throws Exception {
+        String ids = req.param("ids", "");
+        java.util.LinkedHashMap<String, Object> out = new java.util.LinkedHashMap<String, Object>();
+        if (!ids.isEmpty()) {
+            for (String id : ids.split(",")) {
+                id = id.trim();
+                if (id.isEmpty()) continue;
+                Map<String, Object> m = metaFor(id);
+                if (m != null) out.put(id, m);
+            }
+        }
+        res.json(Json.map("ok", true, "map", out));
+    }
+
+    /** 单首曲目的编码属性（本机文件才读得到采样率 / 码率等）；找不到返回 null */
+    private Map<String, Object> metaFor(String id) {
+        Map<String, Object> track = library.byId(id);
+        if (track == null) return null;
+
+        String source = Json.s(track, "source", "local");
+        String path = Json.s(track, "path", "");
+        long size = library.sizeOf(id);
+
+        Map<String, Object> m = Json.map(
+                "ok", true,
+                "id", id,
+                "source", source,
+                "title", Json.s(track, "title"),
+                "artist", Json.s(track, "artist"),
+                "album", Json.s(track, "album"),
+                "duration_sec", Json.i(track, "duration_sec", 0),
+                "size", size,
+                "path", path
+        );
+
+        // 只有本机文件（source=local 且 path 是真实存在的文件）才能用 MediaMetadataRetriever 读编码属性
+        boolean localFile = "local".equals(source) && !path.isEmpty();
+        if (localFile && new File(path).exists()) {
+            MediaMetadataRetriever mmr = new MediaMetadataRetriever();
+            try {
+                mmr.setDataSource(path);
+                String mime = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE);
+                // METADATA_KEY_SAMPLE_RATE(24) / CHANNEL_COUNT(25) 是 @hide，不在公开 SDK 的 android.jar 里，
+                // 但它们的整数值自 API 16 起稳定，运行时可用。
+                String sr = mmr.extractMetadata(24);
+                String br = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE);
+                String ch = mmr.extractMetadata(25);
+                String dur = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+                if (mime != null && !mime.isEmpty()) m.put("mime", mime);
+                m.put("format", audioFormat(mime, path));
+                if (sr != null) { try { m.put("sample_rate", Integer.parseInt(sr)); } catch (NumberFormatException ignore) { } }
+                if (br != null) { try { m.put("bitrate", Integer.parseInt(br)); } catch (NumberFormatException ignore) { } }
+                if (ch != null) { try { m.put("channels", Integer.parseInt(ch)); } catch (NumberFormatException ignore) { } }
+                if (dur != null) { try { m.put("duration_ms", Long.parseLong(dur)); } catch (NumberFormatException ignore) { } }
+                m.put("note", "已从文件读取编码属性");
+            } catch (Throwable e) {
+                // 部分编码 / 容器 MediaMetadataRetriever 解析不了，降级为只返回已知信息
+                m.put("format", audioFormat(null, path));
+                m.put("note", "文件存在但无法读取编码属性（容器或编码不被支持）");
+            } finally {
+                try { mmr.release(); } catch (Throwable ignore) { }
+            }
+        } else {
+            m.put("format", audioFormat(null, path));
+            if ("local".equals(source)) {
+                m.put("note", "该曲目的文件不在本机，无法读取编码属性");
+            } else {
+                m.put("note", "在线 / 网络来源没有本地文件，仅显示曲目自带信息");
+            }
+        }
+        return m;
+    }
+
+    /** 由 MIME / 扩展名推导一个人类可读的音频格式名 */
+    private static String audioFormat(String mime, String path) {
+        if (mime != null && !mime.isEmpty()) {
+            if (mime.contains("flac")) return "FLAC";
+            if (mime.contains("mpeg") || mime.contains("mp3")) return "MP3";
+            if (mime.contains("mp4") || mime.contains("m4a")) return "M4A / AAC";
+            if (mime.contains("aac")) return "AAC";
+            if (mime.contains("ogg") || mime.contains("opus")) return "OGG / OPUS";
+            if (mime.contains("wav")) return "WAV";
+            if (mime.contains("amr")) return "AMR";
+            if (mime.contains("webm")) return "WebM";
+            return mime;
+        }
+        if (path != null) {
+            String p = path.toLowerCase();
+            if (p.endsWith(".flac")) return "FLAC";
+            if (p.endsWith(".mp3")) return "MP3";
+            if (p.endsWith(".m4a") || p.endsWith(".aac")) return "M4A / AAC";
+            if (p.endsWith(".ogg") || p.endsWith(".opus")) return "OGG / OPUS";
+            if (p.endsWith(".wav")) return "WAV";
+            if (p.endsWith(".amr")) return "AMR";
+            if (p.endsWith(".webm")) return "WebM";
+        }
+        return "未知";
     }
 
     /** 在线直链：带 Referer/Cookie 等请求头去抓，边下边回灌，并透传 Range */

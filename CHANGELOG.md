@@ -3,6 +3,28 @@
 All notable changes to SyncDlnaPlay are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions are `X.Y` (Android standalone) unless noted.
 
+## [2.25] — 2026-10-27
+
+### Changed
+- **Track properties are now inline, not behind a button.** Sample rate / bitrate (local library) and
+  the source quality tag (online search) show directly in parentheses after the song title — in the
+  local library list, the online search results, and the Now Playing title. No more tapping ⓘ to see them.
+- Local library rows batch-fetch encoding properties via a new `GET /api/metas` endpoint (one request
+  for the whole visible list) instead of one request per track.
+
+## [2.24] — 2026-10-27
+
+### Added
+- **Track properties panel**: tap the ⓘ button on a local library track, or "ℹ 曲目属性" on the
+  Now Playing page, to see format, sample rate, bitrate, channels, duration and file size. Encoding
+  properties (sample rate / bitrate / channels) are read from local library files via
+  `MediaMetadataRetriever`; online / network sources show only the track's own info.
+- **Equalizer (EQ)**: a 5-band graphic EQ (60 / 230 / 910 / 3k / 14k Hz) on **phone playback**,
+  built with the Web Audio API. Ships with presets — Off, Pop, Rock, Classical, Jazz, Vocal,
+  Bass, Bright — plus a Custom mode with −12…+12 dB per band sliders. Settings persist across
+  sessions. Note: EQ only affects "This phone" output; casting to DLNA speakers uses their own
+  decoder, so phone-side EQ can't reach them.
+
 ## [2.23] — 2026-10-06
 
 ### Fixed

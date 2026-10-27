@@ -509,7 +509,38 @@
     "MusicFree 插件是社区维护的 .js 文件，常见于插件订阅链接或别人分享的分享码。 安装后会立刻出现在在线音乐的「音源」下拉里。":
       "MusicFree plugins are community-maintained .js files, usually shared as subscription links or share codes. Once installed, it appears immediately in the Sources dropdown under Online Search.",
     "「添加本机目录」会打开系统文件选择器，除了本地文件夹，还能选 SD 卡、U 盘， 以及系统「文件」里已挂载好的网络位置。":
-      "“Add local folder” opens the system file picker — besides local folders you can pick SD cards, USB drives, and any network location already mounted in Files."
+      "“Add local folder” opens the system file picker — besides local folders you can pick SD cards, USB drives, and any network location already mounted in Files.",
+
+    /* —— v2.24：曲目属性 + 均衡器 —— */
+    "曲目属性": "Track info",
+    "ℹ 曲目属性": "ℹ Track info",
+    "均衡器": "Equalizer",
+    "🎚 均衡器": "🎚 Equalizer",
+    "音质 / 调音": "Audio quality / tuning",
+    "仅对「手机本机」播放生效；投放音响走外部解码，无法在手机端调音。":
+      "Affects “This phone” playback only. Speakers do their own decoding, so phone-side EQ can't reach them.",
+    "预设": "Presets",
+    "频段增益（dB）": "Band gain (dB)",
+    "开启均衡器": "Enable EQ",
+    "✓ 已开启": "✓ On",
+    "重置": "Reset",
+    "均衡器已开启，拖动滑块实时调音。": "EQ is on — drag the sliders to tune in real time.",
+    "点击「开启均衡器」后才能调音；关闭时音频原样输出。": "Tap “Enable EQ” to tune; when off, audio passes through unchanged.",
+    "艺术家": "Artist",
+    "专辑": "Album",
+    "格式": "Format",
+    "采样率": "Sample rate",
+    "码率": "Bitrate",
+    "声道": "Channels",
+    "时长": "Duration",
+    "文件大小": "File size",
+    "提示：采样率 / 码率等编码属性仅本机曲库文件可读取；在线歌曲不显示。":
+      "Tip: sample rate / bitrate are read from local library files only; online songs don't show them.",
+    "此设备不支持 Web Audio，无法使用均衡器": "This device doesn't support Web Audio, so the equalizer can't be used",
+    "已从文件读取编码属性": "Encoding properties read from the file",
+    "文件存在但无法读取编码属性（容器或编码不被支持）": "File found but its encoding couldn't be read (container or codec not supported)",
+    "该曲目的文件不在本机，无法读取编码属性": "This track's file isn't on this device, so encoding properties can't be read",
+    "在线 / 网络来源没有本地文件，仅显示曲目自带信息": "Online / network sources have no local file — only the track's own info is shown"
   };
 
   /* 词典键归一化：源码里的换行 / 多空格不影响命中 */
@@ -580,7 +611,8 @@
     [/^搜索失败：(.*)$/, "Search failed: $1"],
     [/^音量设置失败：(.*)$/, "Volume change failed: $1"],
     [/^连接成功：(.*)$/, "Connected: $1"],
-    [/^失败：(.*)$/, "Failed: $1"]
+    [/^失败：(.*)$/, "Failed: $1"],
+    [/^路径：(.*)$/, "Path: $1"]
   ];
 
   /* ---------- 引擎 ---------- */

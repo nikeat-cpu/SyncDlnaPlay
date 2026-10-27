@@ -149,6 +149,7 @@ async function boot() {
   // 尊重系统深色/浅色——本 App 恒为深色主题
   $('setup').style.display = 'none';
   $('app').style.display = 'flex';
+  eqLoad();
   switchTab(S.tab, true);
   loadProviders();
   await loadCurQueue();
@@ -388,16 +389,64 @@ function renderLib(r) {
   renderCrumbs();
   if (r.truncated) box.innerHTML += '<div class="sec">目录太大，仅索引了前一部分曲目。</div>';
   libActionsUpdate();
+  decorateProps();
 }
 
 function joinPath(a, b) { return a ? (a.replace(/\/+$/, '') + '/' + b) : b; }
 
+/* 把本机曲目编码属性拼成「(码率 · 采样率)」的内联徽标；拿不到就返回空串 */
+function fmtProp(m) {
+  if (!m) return '';
+  const parts = [];
+  if (m.bitrate) parts.push(Math.round(m.bitrate / 1000) + ' kbps');
+  if (m.sample_rate) {
+    const sr = m.sample_rate / 1000;
+    const s = (sr % 1 === 0) ? String(sr) : sr.toFixed(1);
+    parts.push(s + ' kHz');
+  }
+  return parts.length ? '(' + parts.join(' · ') + ')' : '';
+}
+
+/* 在线曲目：尽量从音源自带的 quality 信息推出一个质量标签（最接近「比特率」的可见信息）。
+   支持 string / 数组 / 对象三种形态；standard 视为无有效信息。 */
+function onlineQualityLabel(t) {
+  let q = t && t.quality;
+  if (!q) return '';
+  let keys;
+  if (typeof q === 'string') keys = [q.trim()];
+  else if (Array.isArray(q)) keys = q.map(String);
+  else if (typeof q === 'object') keys = Object.keys(q).map(String);
+  else return '';
+  keys = keys.map(k => k.trim()).filter(k => k && k !== 'standard');
+  return keys.length ? '(' + keys.join('/') + ')' : '';
+}
+
+/* 列表渲染后，一次性把本机曲目的属性徽标填好（批量请求，避免逐行发） */
+async function decorateProps() {
+  const nodes = Array.prototype.slice.call(document.querySelectorAll('.prop[data-mid]'));
+  if (!nodes.length) return;
+  const ids = [];
+  const seen = {};
+  nodes.forEach(n => { const id = n.getAttribute('data-mid'); if (id && !seen[id]) { seen[id] = 1; ids.push(id); } });
+  if (!ids.length) return;
+  let map = {};
+  try {
+    const r = await api('/api/metas?ids=' + encodeURIComponent(ids.join(',')));
+    if (r && r.map) map = r.map;
+  } catch (e) { return; }
+  nodes.forEach(n => { n.textContent = fmtProp(map[n.getAttribute('data-mid')]); });
+}
+
 function trackRow(t, i, kind) {
   const sub = [t.artist, t.album, t.duration_sec ? fmt(t.duration_sec) : ''].filter(Boolean).join(' · ');
+  // 音频属性（采样率 / 码率）直接显示在歌名后的括号里，不再需要点开才能看
+  const prop = (t.source === 'local' && t.id)
+    ? `<span class="prop" data-mid="${esc(t.id)}"></span>`
+    : '';
   return `<div class="item">
     <div class="ico" onclick="playOne('${kind}',${i})">♫</div>
     <div class="txt" onclick="playOne('${kind}',${i})">
-      <div class="t1">${esc(t.title || '未知')}</div>
+      <div class="t1">${esc(t.title || '未知')}${prop}</div>
       <div class="t2">${esc(sub)}</div>
     </div>
     <div class="act">
@@ -462,6 +511,7 @@ async function loadLibSearch() {
     box.innerHTML = `<div class="sec">找到 ${S._libItems.length} 首</div>` +
       S._libItems.map((t, i) => trackRow(t, i, 'lib')).join('');
     libActionsUpdate();
+    decorateProps();
   } catch (e) { box.innerHTML = '<div class="empty">搜索失败：' + esc(e.message) + '</div>'; }
 }
 
@@ -1598,10 +1648,12 @@ function renderOnline() {
     const base = (S.online.page - 1) * (parseInt($('onlineLimit').value, 10) || 30);
     box.innerHTML = its.map((t, i) => {
       const sub = [t.artist, t.album, t.duration_sec ? fmt(t.duration_sec) : ''].filter(Boolean).join(' · ');
+      const q = onlineQualityLabel(t);
+      const prop = q ? `<span class="prop">${esc(q)}</span>` : '';
       return `<div class="item">
         <div class="no">${base + i + 1}</div>
         <div class="txt" onclick="playOne('online',${i})">
-          <div class="t1">${esc(t.title || '未知')}</div>
+          <div class="t1">${esc(t.title || '未知')}${prop}</div>
           <div class="t2">${esc(sub)}</div>
         </div>
         <div class="act">
@@ -2140,6 +2192,13 @@ function phonePlayAt(i) {
   }
   if (!url) { toast('该曲目没有可用的播放地址', 'err'); return; }
   audio.src = localPlayUrl(url);
+  // EQ 已开启：确保 Web Audio 图已建好并恢复（AudioContext 可能处于 suspended）
+  if (eqOn) {
+    if (ensureEqGraph()) {
+      eqApply();
+      if (eqCtx.state === 'suspended') eqCtx.resume().catch(function () { });
+    }
+  }
   const p = audio.play();
   if (p && p.catch) p.catch(e => toast('本机播放失败：' + e.message, 'err'));
   renderMini(); renderQueue();
@@ -2190,6 +2249,207 @@ async function ctl(action) {
     pushMediaState();
     setTimeout(() => tick(true), 400);
   } catch (e) { toast('操作失败：' + e.message, 'err'); }
+}
+
+/* =========================================================================
+   音频文件属性 + 均衡器（EQ）
+   -------------------------------------------------------------------------
+   属性：调用后端 /api/meta，对本地曲库文件用 MediaMetadataRetriever 读出
+         采样率 / 码率 / 声道等；SMB / 在线来源只返回曲目自带信息。
+   EQ：手机本机播放走 WebView <audio>，用 Web Audio API 挂一条
+       5 段 peaking 滤波链。注意 createMediaElementSource 每个 <audio>
+       只能建一次，且建完音频就改由图内输出，所以只在用户真正开启 EQ
+       时才建图，正常用户零回归。
+   ========================================================================= */
+
+/* ---------- 曲目属性 ---------- */
+function trackInfo(kind, idx) {
+  const list = (kind === 'online') ? (S.online.items || []) : (S._libItems || []);
+  const t = list[idx];
+  if (!t) return;
+  trackInfoSheet(t);
+}
+function trackInfoNow() {
+  const t = nowPlaying().t;
+  if (!t) { toast('先播放一首歌'); return; }
+  trackInfoSheet(t);
+}
+async function trackInfoSheet(t) {
+  openSheet('曲目属性', '<div class="empty"><span class="spin"></span> 读取中…</div>');
+  let meta = null;
+  if (t && t.id) {
+    try {
+      const r = await api('/api/meta?id=' + encodeURIComponent(t.id), { _timeout: 12000 });
+      if (r && r.ok) meta = r;
+    } catch (e) { /* 没读到就用曲目自带信息 */ }
+  }
+  const title = (meta && meta.title) || t.title || '未知';
+  const artist = (meta && meta.artist) || t.artist || '';
+  const album = (meta && meta.album) || t.album || '';
+  const rows = [];
+  rows.push(['标题', esc(String(title))]);
+  if (artist) rows.push(['艺术家', esc(artist)]);
+  if (album) rows.push(['专辑', esc(album)]);
+  rows.push(['格式', esc((meta && meta.format) || (t.ext || '—'))]);
+  if (meta && meta.sample_rate) {
+    const sr = meta.sample_rate;
+    rows.push(['采样率', esc(sr + ' Hz（' + (sr / 1000).toFixed(1) + ' kHz）')]);
+  }
+  if (meta && meta.bitrate) {
+    rows.push(['码率', esc(Math.round(meta.bitrate / 1000) + ' kbps')]);
+  }
+  if (meta && meta.channels) {
+    const ch = meta.channels;
+    rows.push(['声道', esc(ch === 1 ? '单声道（Mono）' : ch === 2 ? '立体声（Stereo）' : (ch + ' 声道'))]);
+  }
+  const dur = (meta && meta.duration_ms) ? Math.round(meta.duration_ms / 1000)
+    : (meta && meta.duration_sec) ? meta.duration_sec : (t.duration_sec || 0);
+  if (dur) rows.push(['时长', esc(fmt(dur))]);
+  if (meta && meta.size) rows.push(['文件大小', esc(fmtBytes(meta.size))]);
+  const note = (meta && meta.note) || ((t.source && t.source !== 'local') ? '在线 / 网络来源没有本地文件，仅显示曲目自带信息' : '');
+  const html = `
+    <div class="kv">
+      ${rows.map(r => `<div class="kv-r"><span class="kv-k">${r[0]}</span><span class="kv-v">${r[1]}</span></div>`).join('')}
+    </div>
+    ${meta && meta.path ? `<div class="sm muted" style="margin-top:10px;word-break:break-all">路径：${esc(meta.path)}</div>` : ''}
+    ${note ? `<div class="sm muted" style="margin-top:10px">${note}</div>` : ''}
+    ${!meta || !meta.sample_rate ? `<div class="sm muted" style="margin-top:6px">提示：采样率 / 码率等编码属性仅本机曲库文件可读取；在线歌曲不显示。</div>` : ''}
+  `;
+  const body = $('sheetBody');
+  if (body) body.innerHTML = html;
+}
+function fmtBytes(n) {
+  n = Number(n) || 0;
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+  return (n / 1024 / 1024).toFixed(2) + ' MB';
+}
+
+/* ---------- 均衡器（Web Audio） ---------- */
+const EQ_BANDS = [60, 230, 910, 3000, 14000];
+const EQ_PRESETS = {
+  off: [0, 0, 0, 0, 0],
+  pop: [-1, 2, 4, 3, 1],
+  rock: [4, 2, -1, 2, 3],
+  classical: [4, 3, 1, 2, 3],
+  jazz: [3, 2, 0, 2, 3],
+  vocal: [-2, 0, 4, 4, 2],
+  bass: [6, 5, 2, 0, 0],
+  bright: [0, 0, 1, 3, 5]
+};
+const EQ_PRESET_LABEL = {
+  off: '关闭', pop: '流行', rock: '摇滚', classical: '古典', jazz: '爵士',
+  vocal: '人声', bass: '重低音', bright: '清脆', custom: '自定义'
+};
+let eqCtx = null, eqSrc = null, eqFilters = null;
+let eqOn = false, eqPreset = 'off', eqGains = [0, 0, 0, 0, 0];
+
+function eqLoad() {
+  try {
+    const s = JSON.parse(localStorage.getItem('dlna_eq') || '{}');
+    if (s.on) eqOn = true;
+    if (s.preset) eqPreset = s.preset;
+    if (Array.isArray(s.gains) && s.gains.length === 5) eqGains = s.gains.map(Number);
+  } catch (e) { }
+  if (!Array.isArray(eqGains) || eqGains.length !== 5) eqGains = [0, 0, 0, 0, 0];
+}
+function eqSave() {
+  try { localStorage.setItem('dlna_eq', JSON.stringify({ on: eqOn, preset: eqPreset, gains: eqGains })); } catch (e) { }
+}
+function ensureEqGraph() {
+  if (eqCtx) return true;
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return false;
+    eqCtx = new AC();
+    eqSrc = eqCtx.createMediaElementSource(audio);
+    eqFilters = EQ_BANDS.map(function (f) {
+      const b = eqCtx.createBiquadFilter();
+      b.type = 'peaking';
+      b.frequency.value = f;
+      b.Q.value = 1.1;
+      b.gain.value = 0;
+      return b;
+    });
+    let node = eqSrc;
+    for (let i = 0; i < eqFilters.length; i++) { node.connect(eqFilters[i]); node = eqFilters[i]; }
+    node.connect(eqCtx.destination);
+    return true;
+  } catch (e) { eqCtx = null; return false; }
+}
+function eqApply() {
+  if (!eqCtx || !eqFilters) return;
+  const g = eqOn ? eqGains : [0, 0, 0, 0, 0];
+  for (let i = 0; i < eqFilters.length; i++) {
+    try { eqFilters[i].gain.value = g[i] || 0; } catch (e) { }
+  }
+}
+function eqSetOn(on) {
+  eqOn = !!on;
+  if (eqOn) {
+    if (!ensureEqGraph()) { toast('此设备不支持 Web Audio，无法使用均衡器', 'err'); eqOn = false; eqSave(); return; }
+    eqApply();
+    if (eqCtx.state === 'suspended') eqCtx.resume().catch(function () { });
+  } else {
+    eqApply();
+  }
+  eqSave();
+}
+function eqToggle() { eqSetOn(!eqOn); eqSheet(); }
+function eqSetPreset(p) {
+  if (p === 'off') { eqPreset = 'off'; eqGains = [0, 0, 0, 0, 0]; eqSetOn(false); eqSheet(); return; }
+  eqPreset = p;
+  eqGains = (EQ_PRESETS[p] || [0, 0, 0, 0, 0]).slice();
+  eqSetOn(true);
+  eqSheet();
+}
+function eqSetBand(i, v) {
+  eqGains[i] = parseInt(v, 10) || 0;
+  eqPreset = 'custom';
+  if (!eqOn) eqSetOn(true);
+  else {
+    if (!ensureEqGraph()) { toast('此设备不支持 Web Audio，无法使用均衡器', 'err'); return; }
+    eqApply();
+    if (eqCtx.state === 'suspended') eqCtx.resume().catch(function () { });
+  }
+  eqSave();
+  const db = $('eqDb' + i); if (db) db.textContent = (eqGains[i] > 0 ? '+' : '') + eqGains[i];
+  eqSyncToggleChip();
+}
+function eqSyncToggleChip() {
+  const c = $('eqOnChip');
+  if (!c) return;
+  c.className = 'chip' + (eqOn ? ' on' : '');
+  c.textContent = eqOn ? '✓ 已开启' : '开启均衡器';
+}
+function eqReset() {
+  eqGains = [0, 0, 0, 0, 0]; eqPreset = 'custom'; eqApply(); eqSave(); eqSheet();
+}
+function eqHzLabel(f) { return f >= 1000 ? (f / 1000) + ' kHz' : f + ' Hz'; }
+function eqSheet() {
+  const presets = ['off', 'pop', 'rock', 'classical', 'jazz', 'vocal', 'bass', 'bright'];
+  const chips = presets.map(function (p) {
+    return `<div class="chip ${eqPreset === p ? 'on' : ''}" onclick="eqSetPreset('${p}')">${EQ_PRESET_LABEL[p]}</div>`;
+  }).join('');
+  const sliders = EQ_BANDS.map(function (f, i) {
+    return `<div class="eq-band">
+      <input type="range" min="-12" max="12" step="1" value="${Math.round(eqGains[i] || 0)}" ${eqOn ? '' : 'disabled'} oninput="eqSetBand(${i},this.value)">
+      <div class="eq-hz">${eqHzLabel(f)}</div>
+      <div class="eq-db" id="eqDb${i}">${(eqGains[i] > 0 ? '+' : '') + Math.round(eqGains[i] || 0)}</div>
+    </div>`;
+  }).join('');
+  openSheet('均衡器', `
+    <div class="sm muted">仅对「手机本机」播放生效；投放音响走外部解码，无法在手机端调音。</div>
+    <div class="sec-title">预设</div>
+    <div class="chips">${chips}</div>
+    <div class="sec-title">频段增益（dB）</div>
+    <div class="eq-row">${sliders}</div>
+    <div class="chips" style="margin-top:14px">
+      <div class="chip ${eqOn ? 'on' : ''}" id="eqOnChip" onclick="eqToggle()">${eqOn ? '✓ 已开启' : '开启均衡器'}</div>
+      <div class="chip" onclick="eqReset()">重置</div>
+    </div>
+    <div class="sm muted" style="margin-top:10px">${eqOn ? '均衡器已开启，拖动滑块实时调音。' : '点击「开启均衡器」后才能调音；关闭时音频原样输出。'}</div>
+  `);
 }
 
 function nowPlaying() {
@@ -2285,7 +2545,7 @@ function nowHTML() {
       <span id="lrcOffVal" class="sm" style="color:var(--cy);min-width:70px;text-align:center">${lyricOffLabel()}</span>
       <button class="btn sm" onclick="lyricOffShift(500)">快 0.5s</button>
     </div>
-    <div class="np-title">${esc(t.title || '未播放')}</div>
+    <div class="np-title">${esc(t.title || '未播放')}${npPropHtml(t)}</div>
     <div class="np-sub">${esc([t.artist, t.album].filter(Boolean).join(' · '))}</div>
 
     <div class="np-time"><span id="npPos">${fmt(n.pos)}</span><span id="npDur">${fmt(n.dur)}</span></div>
@@ -2303,13 +2563,33 @@ function nowHTML() {
       <div class="chip ${adl ? 'on' : ''}" onclick="setAutoDl(${!adl})">⤓ 边听边下载：${adl ? '开' : '关'}</div>
     </div>
     <div class="sm muted" style="margin-top:8px">切「手机本机」＝声音从手机出，音响自动停。</div>
+
+    <div class="sec-title">音质 / 调音</div>
+    <div class="chips">
+      <div class="chip" onclick="trackInfoNow()">ℹ 曲目属性</div>
+      <div class="chip" onclick="eqSheet()">🎚 均衡器</div>
+    </div>
   `;
 }
 function renderNowTab() {
   const n = nowPlaying();
   $('nowBody').innerHTML = nowHTML();
   S._nowKey = trackKeyOf(n.t) + '|' + (n.playing ? '1' : '0');
+  fillNowProp();
   setTimeout(function () { loadLyric(n.t); renderLyric(); }, 0);
+}
+
+/* 正在播放页标题后的属性徽标：本机曲目异步取 /api/meta 填，在线曲目直接用 quality */
+function npPropHtml(t) {
+  if (t.source === 'local' && t.id) return `<span class="prop" id="npProp" data-mid="${esc(t.id)}"></span>`;
+  if (t.source === 'online') return `<span class="prop">${esc(onlineQualityLabel(t))}</span>`;
+  return '';
+}
+function fillNowProp() {
+  const el = $('npProp');
+  if (!el) return;
+  const id = el.getAttribute('data-mid');
+  api('/api/meta?id=' + encodeURIComponent(id)).then(r => { if (r) el.textContent = fmtProp(r); }).catch(() => { });
 }
 function refreshNow() {
   if (!$('nowBody') || S.tab !== 'now') return;

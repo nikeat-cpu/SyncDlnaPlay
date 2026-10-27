@@ -5,6 +5,27 @@
 
 ---
 
+## GitHub Release（v2.25）
+
+**SyncDlnaPlay v2.25 — audio properties inline + 5-band EQ**
+
+### What's new since v2.23
+- 🎚 **5-band graphic EQ** (60 / 230 / 910 / 3k / 14k Hz) for phone-local playback, with presets (Pop / Rock / Classical / Jazz / Vocal / Bass / Bright) plus a custom mode (±12 dB per band). Settings persist across sessions.
+- 📊 **Audio properties, now inline** — sample rate and bitrate show right after the song title, e.g. `Song (320 kbps · 44.1 kHz)`. No more tapping into a details panel.
+- 🔎 **Online search shows quality tags** directly (e.g. `flac`, `320k`) so you know what you're about to play.
+- ⚙️ Under the hood: a batched `/api/metas` endpoint replaces per-row requests, so large libraries load fast.
+
+### Notes
+- EQ affects **phone-local** playback only; when casting to a DLNA speaker the audio is decoded by the speaker itself, so on-device EQ can't touch it (a DLNA limitation, not a shortcut).
+- Online quality tags reflect the source's available tiers, not the exact measured bitrate (that's only known once the stream is fetched).
+- Everything else from v2.23 holds: multi-room sync with per-speaker delay, auto-fallback to phone when no speaker is found, SMB/SD library, MusicFree online sources, synced + immersive lyrics, download-while-playing, EN/中文 UI.
+
+### Install
+Download `SyncDlnaPlay-standalone-v2.25.apk` below (Android 8.0+), sideload, done.
+Full docs: README · 中文说明
+
+---
+
 ## 1. GitHub Release 说明（v2.12）
 
 **Title:** SyncDlnaPlay v2.12 — Bilingual UI, immersive lyrics, smoother casting

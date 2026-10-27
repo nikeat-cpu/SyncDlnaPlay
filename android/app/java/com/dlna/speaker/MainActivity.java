@@ -532,7 +532,7 @@ public class MainActivity extends Activity {
             try {
                 return getPackageManager().getPackageInfo(getPackageName(), 0).versionName + "-standalone";
             } catch (Throwable t) {
-                return "2.23-standalone";
+                return "2.25-standalone";
             }
         }
 

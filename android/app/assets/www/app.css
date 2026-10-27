@@ -286,6 +286,9 @@ textarea.ta{resize:vertical;line-height:1.5;font-size:13px;min-height:110px}
 .item .txt{flex:1;min-width:0}
 .item .t1{font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .item .t2{font-size:12px;color:var(--tx3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* 歌名后的音频属性徽标（码率 / 采样率 / 在线质量），内联显示，无需点开 */
+.prop{display:inline-block;margin-left:6px;padding:0 6px;font-size:11px;line-height:15px;border-radius:8px;background:rgba(34,230,255,.14);color:var(--cy);font-weight:700;vertical-align:middle;font-family:var(--mono);letter-spacing:.2px;white-space:nowrap}
+.np-title .prop{font-size:12px;line-height:18px;margin-left:8px}
 .item.on{background:linear-gradient(90deg,rgba(34,230,255,.16),rgba(34,230,255,.02))}
 .item.on::before{
   content:'';position:absolute;left:0;top:0;bottom:0;width:2px;
@@ -689,3 +692,19 @@ html.theme-amber body{background:linear-gradient(180deg,#0f0a04 0%,#1a1208 55%,#
 html.theme-pink body{background:linear-gradient(180deg,#0f0408 0%,#1a0812 55%,#0f0408 100%)}
 html.theme-green body{background:linear-gradient(180deg,#040f06 0%,#081a0d 55%,#040f06 100%)}
 html.theme-violet body{background:linear-gradient(180deg,#07040f 0%,#12081a 55%,#07040f 100%)}
+
+/* ================= v2.24：曲目属性 + 均衡器 ================= */
+.kv{display:flex;flex-direction:column;gap:2px;margin:4px 0 2px}
+.kv-r{display:flex;align-items:baseline;gap:10px;padding:9px 2px;border-bottom:1px solid rgba(34,230,255,.1)}
+.kv-r:last-child{border-bottom:none}
+.kv-k{flex:0 0 78px;color:var(--tx3);font-size:12.5px;letter-spacing:.02em}
+.kv-v{flex:1;color:var(--tx);font-size:13.5px;word-break:break-word;text-align:right}
+
+/* 均衡器：每一段一行，左频率 / 中滑条 / 右 dB 值 */
+.eq-row{display:flex;flex-direction:column;gap:14px;margin:10px 2px 4px}
+.eq-band{display:grid;grid-template-columns:64px 1fr 42px;align-items:center;gap:12px}
+.eq-band input[type=range]{width:100%}
+.eq-hz{color:var(--tx3);font-size:12px;text-align:right;font-family:var(--mono)}
+.eq-db{color:var(--cy);font-size:13px;text-align:right;font-family:var(--mono);font-weight:600}
+.eq-band input[type=range]:disabled{opacity:.4}
+
