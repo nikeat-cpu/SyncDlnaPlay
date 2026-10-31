@@ -146,7 +146,7 @@ window.__onScanResults = function () { };
    二、启动与轮询
    ========================================================================= */
 async function boot() {
-  // 尊重系统深色/浅色——本 App 恒为深色主题
+  // 深色是默认；设置里可以改成浅色或跟随系统（见 applyScheme）
   $('setup').style.display = 'none';
   $('app').style.display = 'flex';
   eqLoad();
@@ -192,11 +192,7 @@ async function tick(silent) {
    三、Tab 切换
    ========================================================================= */
 
-/* 内联线性图标集合
-   ------------------------------------------------------------------
-   为什么不用 emoji：🖧 这类冷门 emoji 在不同 ROM 上有的渲染成方块、
-   有的是彩色贴图，跟赛博朋克配色打架。统一用 currentColor 描边 SVG，
-   颜色跟着文字走，任何设备上长得都一样。 */
+/* 内联线性图标集合。描边用 currentColor，深色和浅色都跟着文字走。 */
 const I = {
   star: '<svg class="iv" viewBox="0 0 24 24"><path d="M12 3.4l2.5 5.2 5.7.8-4.1 4 1 5.7-5.1-2.7-5.1 2.7 1-5.7-4.1-4 5.7-.8z"/></svg>',
   net: '<svg class="iv" viewBox="0 0 24 24"><rect x="3" y="3.6" width="18" height="7" rx="1.9"/><rect x="3" y="13.4" width="18" height="7" rx="1.9"/><circle cx="7.1" cy="7.1" r="1.05"/><circle cx="7.1" cy="16.9" r="1.05"/></svg>',
@@ -214,6 +210,14 @@ const I = {
   wave: '<svg class="iv" viewBox="0 0 24 24"><path d="M2.8 12h2.4l2.1-5.6 2.9 12.4 2.9-15.6 2.4 8.8h5.9"/></svg>',
   cloud: '<svg class="iv" viewBox="0 0 24 24"><path d="M7.2 18.4h10a3.9 3.9 0 0 0 .5-7.77 5.6 5.6 0 0 0-10.7-1.4 4.2 4.2 0 0 0 .2 9.17z"/></svg>',
   log: '<svg class="iv" viewBox="0 0 24 24"><path d="M6 3.4h8.4L19 8v12.6H6z"/><path d="M14 3.4V8h4.6"/><path d="M8.8 12.4h6.4M8.8 15.8h4.4"/></svg>',
+  note: '<svg class="iv" viewBox="0 0 24 24"><path d="M9 18.2a2.6 2.6 0 1 1-2.2-2.55V6.4l10-2v9.3"/><path d="M16.8 16.1a2.6 2.6 0 1 1-2.2-2.55"/></svg>',
+  disc: '<svg class="iv" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2.2"/></svg>',
+  phone: '<svg class="iv" viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2.2"/><path d="M11 17.5h2"/></svg>',
+  speaker: '<svg class="iv" viewBox="0 0 24 24"><rect x="3.5" y="4" width="9" height="16" rx="2"/><circle cx="8" cy="14.2" r="2"/><circle cx="8" cy="8.2" r=".9" fill="currentColor" stroke="none"/><path d="M15.2 9a3.6 3.6 0 0 1 0 6M17.6 6.8a6.4 6.4 0 0 1 0 10.4"/></svg>',
+  speakerOff: '<svg class="iv" viewBox="0 0 24 24"><rect x="3.5" y="4" width="9" height="16" rx="2"/><circle cx="8" cy="14.2" r="2"/><circle cx="8" cy="8.2" r=".9" fill="currentColor" stroke="none"/></svg>',
+  gear: '<svg class="iv" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="9" cy="7" r="1.7" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="8" cy="17" r="1.7" fill="currentColor" stroke="none"/></svg>',
+  vol: '<svg class="iv" viewBox="0 0 24 24"><path d="M4.2 9.6h3.1L11.2 6v12l-3.9-3.6H4.2z"/><path d="M14.6 9.2a3.3 3.3 0 0 1 0 5.6"/></svg>',
+  box: '<svg class="iv" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="3.2"/></svg>',
 };
 
 const TAB_TITLE = { now: '正在播放', devices: '我的设备', lib: '本地曲库', online: '在线搜索', queue: '播放列表' };
@@ -262,15 +266,15 @@ function renderDevices() {
     const stTxt = d.state && STATE_TXT[d.state] ? STATE_TXT[d.state] : (on ? '' : '离线');
     const sub = [d.ip, stTxt].filter(Boolean).join(' · ') + (d.title ? (' · ' + d.title) : '');
     return `<div class="item">
-      <div class="ico" style="color:${on ? 'var(--acc)' : 'var(--tx3)'}">${d.selected ? '🔊' : '🔈'}</div>
+      <div class="ico vi" style="color:${on ? 'var(--acc)' : 'var(--tx3)'}">${d.selected ? I.speaker : I.speakerOff}</div>
       <div class="txt" onclick="toggleDev(${i})">
         <div class="t1">${esc(d.name || '未知设备')}${d.selected ? ' <span class="sm" style="color:var(--acc)">· 已选</span>' : ''}</div>
         <div class="t2">${esc(sub)}</div>
       </div>
       <div class="act">
-        ${d.has_volume !== false ? `<button class="iconbtn sm2" title="音量" onclick="volumeSheet(${i})">🔉</button>` : ''}
-        ${d.has_volume !== false ? `<button class="iconbtn sm2" title="更多设置" onclick="devSheet(${i})">⚙</button>` : ''}
-        <button class="iconbtn sm2" title="${d.selected ? '取消' : '选择'}" onclick="toggleDev(${i})">${d.selected ? '☑' : '☐'}</button>
+        ${d.has_volume !== false ? `<button class="iconbtn sm2 vi" title="音量" onclick="volumeSheet(${i})">${I.vol}</button>` : ''}
+        ${d.has_volume !== false ? `<button class="iconbtn sm2 vi" title="更多设置" onclick="devSheet(${i})">${I.gear}</button>` : ''}
+        <button class="iconbtn sm2 vi" title="${d.selected ? '取消' : '选择'}" onclick="toggleDev(${i})">${d.selected ? I.check : I.box}</button>
       </div>
     </div>`;
   }).join('');
@@ -367,7 +371,7 @@ function renderLib(r) {
   }
   folders.forEach(f => {
     rows.push(`<div class="item" onclick="enterFolder('${esc(f.path).replace(/'/g, "&#39;")}')">
-      <div class="ico">📁</div>
+      <div class="ico vi">${I.folder}</div>
       <div class="txt"><div class="t1">${esc(f.name)}</div></div>
       <div class="act"><button class="iconbtn sm2" onclick="event.stopPropagation();playFolder('${esc(f.path).replace(/'/g, "&#39;")}')" title="播放整个文件夹">▶</button></div>
     </div>`);
@@ -376,7 +380,7 @@ function renderLib(r) {
   (r.items || []).forEach(t => {
     if (t.type === 'container') {
       rows.push(`<div class="item" onclick="enterFolder('${esc(t.id).replace(/'/g, "&#39;")}')">
-        <div class="ico">💿</div>
+        <div class="ico vi">${I.disc}</div>
         <div class="txt"><div class="t1">${esc(t.title || '')}</div></div>
         <div class="act"><button class="iconbtn sm2" onclick="event.stopPropagation();playFolder('${esc(t.id).replace(/'/g, "&#39;")}')" title="播放整张">▶</button></div>
       </div>`);
@@ -444,14 +448,14 @@ function trackRow(t, i, kind) {
     ? `<span class="prop" data-mid="${esc(t.id)}"></span>`
     : '';
   return `<div class="item">
-    <div class="ico" onclick="playOne('${kind}',${i})">♫</div>
+    <div class="ico vi" onclick="playOne('${kind}',${i})">${I.note}</div>
     <div class="txt" onclick="playOne('${kind}',${i})">
       <div class="t1">${esc(t.title || '未知')}${prop}</div>
       <div class="t2">${esc(sub)}</div>
     </div>
     <div class="act">
-      <button class="iconbtn sm2" title="加入列表" onclick="addOne('${kind}',${i})">＋</button>
-      <button class="iconbtn sm2" title="手机播放" onclick="playOne('${kind}',${i},true)">📱</button>
+      <button class="iconbtn sm2 vi" title="加入列表" onclick="addOne('${kind}',${i})">${I.plus}</button>
+      <button class="iconbtn sm2 vi" title="手机播放" onclick="playOne('${kind}',${i},true)">${I.phone}</button>
     </div>
   </div>`;
 }
@@ -573,13 +577,13 @@ async function musicSourcesSheet() {
 
     const dirRows = dirs.length ? dirs.map(d => `
       <div class="item">
-        <div class="ico">${d.type === 'smb' ? '🖧' : '📁'}</div>
+        <div class="ico vi">${d.type === 'smb' ? I.net : I.folder}</div>
         <div class="txt">
           <div class="t1">${esc(d.name)}</div>
           <div class="t2">${esc(d.addr)} · ${d.count || 0} 首</div>
         </div>
         <div class="act">
-          <button class="iconbtn sm2" title="移除" onclick="removeMusicDir('${esc(d.id)}')">🗑</button>
+          <button class="iconbtn sm2 vi" title="移除" onclick="removeMusicDir('${esc(d.id)}')">${I.x}</button>
         </div>
       </div>`).join('')
       : '<div class="sm muted" style="padding:6px 0">还没添加其它目录。手机里的歌靠系统媒体库自动收录。</div>';
@@ -1004,6 +1008,40 @@ function applyTheme() {
   THEMES.forEach(t => html.classList.remove('theme-' + t.key));
   html.classList.add('theme-' + key);
 }
+/* 外观：深色（默认，和系统状态栏一致）/ 浅色 / 跟随系统。只改 html 类，不改播放。 */
+const SCHEMES = [
+  { key: 'dark', label: '深色' },
+  { key: 'light', label: '浅色' },
+  { key: 'system', label: '跟随系统' }
+];
+function schemeSaved() {
+  try {
+    const v = localStorage.getItem('dlna_scheme') || 'dark';
+    return (v === 'light' || v === 'system') ? v : 'dark';
+  } catch (e) { return 'dark'; }
+}
+function setScheme(key) {
+  if (key !== 'light' && key !== 'system') key = 'dark';
+  try { localStorage.setItem('dlna_scheme', key); } catch (e) { }
+  applyScheme();
+  const t = SCHEMES.find(x => x.key === key);
+  toast('外观：' + (t ? t.label : key), 'ok');
+  if ($('sheet').style.display !== 'none') settingsSheet();
+}
+function applyScheme() {
+  const key = schemeSaved();
+  const html = document.documentElement;
+  html.classList.remove('scheme-dark', 'scheme-light', 'scheme-system');
+  html.classList.add('scheme-' + key);
+  let light = key === 'light';
+  if (key === 'system') {
+    try { light = window.matchMedia('(prefers-color-scheme: light)').matches; }
+    catch (e) { light = false; }
+  }
+  html.classList.toggle('is-light', light);
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', light ? '#F4F6F8' : '#0B0F14');
+}
 function applyLyricSize() {
   const px = lyricSizeSaved();
   const root = document.documentElement;
@@ -1365,7 +1403,7 @@ async function srcBrowse(path) {
         <button class="btn sm pri" onclick="srcPick('${esc(r.path)}')">选这个目录</button>
       </div>
       ${(r.dirs || []).map(d =>
-      `<div class="scanitem" onclick="srcBrowse('${esc(d.path)}')">📁 ${esc(d.name)}</div>`).join('')
+      `<div class="scanitem vi" onclick="srcBrowse('${esc(d.path)}')">${I.folder} ${esc(d.name)}</div>`).join('')
       || '<div class="empty" style="padding:10px">（没有子目录，可直接选当前目录）</div>'}`;
   } catch (e) { box.innerHTML = '<div class="empty">读取失败：' + esc(e.message) + '</div>'; }
 }
@@ -2804,6 +2842,12 @@ function settingsSheet() {
       <span id="lyrSizeLandVal" class="sm" style="min-width:48px;text-align:right;color:var(--cy)">${lyricSizeLandSaved()}px</span>
     </div>
 
+    <div class="sec-title">外观</div>
+    <div class="chips">
+      ${SCHEMES.map(t => '<div class="chip ' + (schemeSaved() === t.key ? 'on' : '') + '" onclick="setScheme(\'' + t.key + '\')">' + esc(t.label) + '</div>').join('')}
+    </div>
+    <div class="sm muted" style="margin-top:8px">深色是默认。浅色适合白天；跟随系统则和手机的深色模式一致。</div>
+
     <div class="sec-title">主题配色</div>
     <div class="chips">
       ${THEMES.map(t => '<div class="chip ' + (themeSaved() === t.key ? 'on' : '') + '" onclick="setTheme(\'' + t.key + '\')">' + esc(t.label) + '</div>').join('')}
@@ -2904,7 +2948,13 @@ window.__onBack = function () {
    ========================================================================= */
 (function init() {
   loadBase();
-  applyTheme(); applyLyricSize(); applyLandLyricSize();
+  applyTheme(); applyScheme(); applyLyricSize(); applyLandLyricSize();
+  try {
+    const mq = window.matchMedia('(prefers-color-scheme: light)');
+    const onCh = function () { if (schemeSaved() === 'system') applyScheme(); };
+    if (mq.addEventListener) mq.addEventListener('change', onCh);
+    else if (mq.addListener) mq.addListener(onCh);
+  } catch (e) { }
 
   $('btnRetry').addEventListener('click', () => { setMsg(''); startEngine(); });
 

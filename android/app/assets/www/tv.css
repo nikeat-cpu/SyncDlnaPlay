@@ -54,8 +54,8 @@ html.tv .nav {
   padding:12px 10px;
   gap:6px;
   border-top:0;
-  border-right:1px solid rgba(34,230,255,.20);
-  background:rgba(6,11,20,.72);
+  border-right:1px solid var(--line);
+  background:var(--bg2);
   backdrop-filter:none;
   -webkit-backdrop-filter:none;
 }
@@ -66,8 +66,8 @@ html.tv .navbtn {
   gap:12px;
   padding:16px 12px;
   font-size:15px;
-  letter-spacing:.06em;
-  border-radius:5px;
+  letter-spacing:.02em;
+  border-radius:12px;
   line-height:1.2;
 }
 html.tv .navbtn i { font-size:26px; }
@@ -100,8 +100,8 @@ html.tv .tvcue {
   flex-wrap:wrap; gap:14px;
   padding:9px 16px;
   font-size:13.5px; color:var(--tx3);
-  background:rgba(4,6,12,.92);
-  border-top:1px solid rgba(34,230,255,.14);
+  background:var(--bg);
+  border-top:1px solid var(--line);
   letter-spacing:.02em;
 }
 html.tv body > .tvcue { position:fixed; left:0; right:0; bottom:0; z-index:60; }
@@ -112,16 +112,15 @@ html.tv .tvcue .sep { color:rgba(34,230,255,.32); }
 html.tv .tv-focus {
   outline:3px solid var(--cy);
   outline-offset:2px;
-  border-radius:5px;
+  border-radius:12px;
   position:relative;
   z-index:3;
-  background:rgba(34,230,255,.12);
-  box-shadow:0 0 0 1px rgba(4,6,12,.85),
-             0 0 28px rgba(34,230,255,.55),
-             inset 0 0 22px rgba(34,230,255,.10);
+  background:color-mix(in srgb, var(--cy) 18%, transparent);
+  box-shadow:0 0 0 1px var(--bg),
+             0 0 22px color-mix(in srgb, var(--cy) 50%, transparent);
 }
 html.tv .item.tv-focus {
-  background:linear-gradient(90deg, rgba(34,230,255,.22), rgba(34,230,255,.04));
+  background:color-mix(in srgb, var(--cy) 16%, var(--card));
 }
 html.tv .item.tv-focus .t1 { color:#eafcff; }
 html.tv .navbtn.tv-focus { color:var(--cy); }
@@ -152,7 +151,7 @@ html.tv .bar, html.tv .bar2 { gap:12px; padding:14px 22px; }
 html.tv .crumbs { gap:8px; padding:4px 22px 12px; }
 html.tv .crumb { font-size:15px; padding:10px 15px; }
 
-html.tv .btn { font-size:16px; padding:13px 22px; border-radius:5px; }
+html.tv .btn { font-size:16px; padding:13px 22px; border-radius:12px; }
 html.tv .btn.sm { font-size:15px; padding:11px 17px; }
 html.tv .iconbtn { width:54px; height:54px; font-size:22px; }
 html.tv .iconbtn.sm2 { width:48px; height:48px; font-size:20px; }
@@ -171,7 +170,7 @@ html.tv .vrow b { width:52px; font-size:18px; }
 html.tv .vrow span { font-size:16px; }
 
 html.tv .chips { gap:12px; margin-top:16px; }
-html.tv .chip { font-size:16px; padding:13px 19px; border-radius:5px; }
+html.tv .chip { font-size:16px; padding:13px 19px; border-radius:999px; }
 html.tv .seg { padding:3px; }
 html.tv .segbtn { font-size:16px; padding:12px 20px; }
 html.tv .sec-title { font-size:15.5px; margin-top:24px; }
@@ -184,8 +183,8 @@ html.tv .sheet {
   transform:translate(-50%, -50%);
   width:min(1080px, 84vw);
   max-height:84vh;
-  border:1px solid rgba(34,230,255,.38);
-  border-radius:8px;
+  border:1px solid var(--line);
+  border-radius:20px;
   padding-bottom:0;
   animation:tvpop .18s ease;
 }
@@ -196,6 +195,8 @@ html.tv .sheet {
 html.tv .sheet-hd { padding:20px 24px 15px; font-size:18px; }
 html.tv .sheet-bd { padding:16px 24px 26px; }
 html.tv .sheet .grab { display:none; }
+html.tv .sheet::before { display:none; }
+html.tv .mini { left:auto; right:auto; border-radius:0; }
 html.tv .mask { background:rgba(2,4,8,.78); }
 
 /* 正在播放：封面、歌词、进度条一起放大 */
@@ -215,9 +216,7 @@ html.tv .setup .logo img { width:170px; height:170px; }
 html.tv .setup .sub { font-size:13px; }
 html.tv .setup .btn { font-size:17px; padding:15px 26px; }
 
-/* 歌词/装饰在电视上柔和一点，别太刺眼 */
-html.tv body::after { opacity:.28; }
-html.tv .fx-hud { opacity:.4; }
+/* 扫描线和 HUD 角标已在 polish.css 去掉，这里不再调透明度 */
 
 /* 横屏矮窗口（部分盒子 720p）时再收一点，保证内容区不被压扁 */
 @media (max-height:520px) {

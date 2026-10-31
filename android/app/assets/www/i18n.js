@@ -404,6 +404,29 @@
     "不可读": "Not readable",
     "语言": "Language",
     "语言 / Language": "Language",
+    "外观": "Appearance",
+    "深色": "Dark",
+    "浅色": "Light",
+    "跟随系统": "Match system",
+    "深色是默认。浅色适合白天；跟随系统则和手机的深色模式一致。":
+      "Dark is the default. Light is easier in daylight; Match system follows the phone's dark mode.",
+    "主题配色": "Accent",
+    "霓虹青": "Cyan",
+    "琥珀金": "Amber",
+    "玫瑰粉": "Rose",
+    "极光绿": "Green",
+    "电光紫": "Violet",
+    "主题：霓虹青": "Accent: Cyan",
+    "主题：琥珀金": "Accent: Amber",
+    "主题：玫瑰粉": "Accent: Rose",
+    "主题：极光绿": "Accent: Green",
+    "主题：电光紫": "Accent: Violet",
+    "外观：深色": "Appearance: Dark",
+    "外观：浅色": "Appearance: Light",
+    "外观：跟随系统": "Appearance: Match system",
+    "💾 另存为": "💾 Save as",
+    "📂 我的": "📂 Mine",
+    "⤓ 库列表": "⤓ Export",
     "中文": "中文",
     "English": "English",
     "界面语言": "Interface language",
@@ -560,7 +583,12 @@
   var STATE_ALT = Object.keys(STATE_EN).join("|");
 
   var RX = [
-    [/^(.+) · (播放中|已暂停|已停止|缓冲中|离线|未播放|未知)$/, function (m) { return m[1] + " · " + STATE_EN[m[2]]; }],
+    /* replace() 回调的参数是 (全文, 分组1, 分组2)，不是 exec 的匹配数组 */
+    [/^(.+) · (播放中|已暂停|已停止|缓冲中|离线|未播放|未知)$/, function (_m, head, state) {
+      return head + " · " + (STATE_EN[state] || state);
+    }],
+    [/^(.+) · 音响$/, "$1 · Speaker"],
+    [/^(.+) · 本机播放$/, "$1 · This phone"],
     [/^(\d+) 台设备$/, "$1 devices"],
     [/^(\d+) 台同步$/, "$1 synced"],
     [/^(\d+) 首 · 第 (\d+) 首$/, "$1 tracks · #$2"],
