@@ -3,9 +3,26 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1,user-scalable=no">
-<meta name="theme-color" content="#04060c">
+<meta name="theme-color" content="#0B0F14">
+<script>
+/* 首屏前就定深浅色，避免闪一下旧底色。逻辑与 app.js applyScheme 一致，默认深色。 */
+(function () {
+  try {
+    var s = localStorage.getItem('dlna_scheme') || 'dark';
+    if (s !== 'light' && s !== 'system') s = 'dark';
+    document.documentElement.classList.add('scheme-' + s);
+    var light = s === 'light' || (s === 'system' && matchMedia('(prefers-color-scheme: light)').matches);
+    if (light) {
+      document.documentElement.classList.add('is-light');
+      var m = document.querySelector('meta[name="theme-color"]');
+      if (m) m.setAttribute('content', '#F4F6F8');
+    }
+  } catch (e) {}
+})();
+</script>
 <title>SyncDlnaPlay</title>
 <link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="polish.css">
 <!-- 电视模式（Android TV / 机顶盒 + 遥控器）：只在 <html class="tv"> 下生效 -->
 <link rel="stylesheet" href="tv.css">
 </head>
@@ -21,8 +38,7 @@
   <div class="setup-card">
     <div class="logo">
       <!-- 标志：切角八边形 + 五柱频谱。青→紫→品红渐变，与 App 图标同源。 -->
-      <img src="logo.png" width="132" height="132" alt="SyncDlnaPlay"
-           style="border-radius:24%;box-shadow:0 0 34px rgba(34,230,255,.35), 0 0 70px rgba(160,113,255,.22)">
+      <img src="logo.png" width="132" height="132" alt="SyncDlnaPlay">
     </div>
     <h1 data-t="SyncDlnaPlay">SyncDlnaPlay</h1>
     <p class="sub" id="splashSub">正在启动…</p>
@@ -38,7 +54,7 @@
   <header class="topbar">
     <div class="brand" id="topTitle">设备</div>
     <button class="topdev" id="topDev">选择音响</button>
-    <button class="iconbtn" id="btnSettings" aria-label="设置">⚙</button>
+    <button class="iconbtn vi" id="btnSettings" aria-label="设置"><svg class="iv" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="9" cy="7" r="1.7" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="8" cy="17" r="1.7" fill="currentColor" stroke="none"/></svg></button>
   </header>
 
   <main id="main">
@@ -65,8 +81,8 @@
           <button class="segbtn on" data-src="local">本机音乐</button>
           <button class="segbtn" data-src="dlna">媒体库</button>
         </div>
-        <button class="iconbtn" id="btnLibSearch" aria-label="搜索">🔍</button>
-        <button class="iconbtn" id="btnLibMore" aria-label="更多">⋯</button>
+        <button class="iconbtn vi" id="btnLibSearch" aria-label="搜索"><svg class="iv" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.2"/><path d="M16 16.2L20.2 20.4"/></svg></button>
+        <button class="iconbtn vi" id="btnLibMore" aria-label="更多"><svg class="iv" viewBox="0 0 24 24"><circle cx="6" cy="12" r="1.25" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.25" fill="currentColor" stroke="none"/><circle cx="18" cy="12" r="1.25" fill="currentColor" stroke="none"/></svg></button>
       </div>
       <div class="crumbs" id="crumbs"></div>
       <div id="libList" class="list"></div>
@@ -135,10 +151,10 @@
       </div>
     </div>
     <div class="mini-ctl">
-      <button class="iconbtn" id="miniVol" title="音量">🔉</button>
-      <button class="iconbtn" id="miniPrev">⏮</button>
-      <button class="iconbtn big" id="miniPlay">▶</button>
-      <button class="iconbtn" id="miniNext">⏭</button>
+      <button class="iconbtn vi" id="miniVol" title="音量" aria-label="音量"><svg class="iv" viewBox="0 0 24 24"><path d="M4.2 9.6h3.1L11.2 6v12l-3.9-3.6H4.2z"/><path d="M14.6 9.2a3.3 3.3 0 0 1 0 5.6"/></svg></button>
+      <button class="iconbtn vi" id="miniPrev" aria-label="上一首"><svg class="iv" viewBox="0 0 24 24"><path d="M6.2 6v12"/><path d="M18.4 6.4L9.6 12l8.8 5.6z"/></svg></button>
+      <button class="iconbtn big" id="miniPlay" aria-label="播放">▶</button>
+      <button class="iconbtn vi" id="miniNext" aria-label="下一首"><svg class="iv" viewBox="0 0 24 24"><path d="M17.8 6v12"/><path d="M5.6 6.4L14.4 12 5.6 17.6z"/></svg></button>
     </div>
   </div>
 

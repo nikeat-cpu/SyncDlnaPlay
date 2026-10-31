@@ -21,7 +21,7 @@
 
 ---
 
-**SyncDlnaPlay** is a cyberpunk-styled music player and DLNA caster that runs *entirely on your phone*.
+**SyncDlnaPlay** is a music player and DLNA caster that runs *entirely on your phone*.
 Play local files, search and download songs online, select several DLNA speakers on your LAN and they play
 simultaneously in sync, and follow along with synced lyrics — including a full-screen immersive lyrics mode.
 
@@ -77,7 +77,7 @@ It ships in two independent flavors:
   filtered, so the seekbar doesn't jump around after you drag it
 - Queue management: jump, remove, clear, shuffle / repeat-all / repeat-one / in-order
 - Volume panel that targets either the speaker group or the phone, with ±1 steps and long-press repeat
-- Cyberpunk HUD aesthetic, honest SVG icons, dark theme
+- Dark theme by default, with a light theme and accent colors in Settings; line icons and rounded cards
 
 ### 🌍 Bilingual UI
 - English and 简体中文, auto-detected from your system language, switchable in **Settings**
